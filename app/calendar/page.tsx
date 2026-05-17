@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CalendarWeek } from '@/components/CalendarWeek';
 import { EventModal } from '@/components/EventModal';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
@@ -228,6 +228,17 @@ function DayView({ currentDate, onAddEvent, onEditEvent }: {
   onEditEvent: (event: CalendarEvent, isRecurringInstance: boolean, instanceDate: string) => void;
 }) {
   const { calendarEvents, customEventTypes } = useData();
+  const scheduleRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = scheduleRef.current;
+    if (!container) return;
+
+    const sixAmRow = container.querySelector<HTMLElement>('[data-hour="6"]');
+    if (sixAmRow) {
+      container.scrollTop = sixAmRow.offsetTop;
+    }
+  }, [currentDate]);
 
   const dateStr = format(currentDate, 'yyyy-MM-dd');
   const dayOfWeek = getDay(currentDate) === 0 ? 7 : getDay(currentDate);
@@ -317,14 +328,14 @@ function DayView({ currentDate, onAddEvent, onEditEvent }: {
 
   return (
     <div className="glass-card animate-fade-in overflow-hidden relative">
-      <div className="overflow-y-auto max-h-[60vh] relative pb-20">
+      <div ref={scheduleRef} className="overflow-y-auto max-h-[60vh] relative pb-20">
         {hours.map(hour => {
           const eventsHere = getEventsAtHour(hour);
           const startsHere = getStartsAtHour(hour);
           const hasEvent = eventsHere.length > 0;
 
           return (
-            <div key={hour} className="flex min-h-[44px] border-b border-[rgba(255,255,255,0.05)]">
+            <div key={hour} data-hour={hour} className="flex min-h-[44px] border-b border-[rgba(255,255,255,0.05)]">
               <div className="w-14 flex-shrink-0 text-[11px] text-gray-500 text-right pr-3 pt-1 font-medium">
                 {hour === 0 ? '12 AM' : hour <= 11 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour - 12} PM`}
               </div>

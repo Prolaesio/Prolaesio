@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { format, addDays, startOfWeek, isSameDay, parseISO, getHours, getDay, getDate, isAfter, isBefore, lastDayOfMonth } from 'date-fns';
 import { CalendarEvent } from '../lib/types';
 import { useData } from '../lib/DataContext';
@@ -113,6 +113,17 @@ function computeOverlapGroups(events: RenderedEvent[], maxCols: number): Map<str
 
 export function CalendarWeek({ currentDate, onAddEvent, onEditEvent }: CalendarWeekProps) {
   const { calendarEvents, customEventTypes } = useData();
+  const scheduleRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = scheduleRef.current;
+    if (!container) return;
+
+    const sixAmRow = container.querySelector<HTMLElement>('[data-hour="6"]');
+    if (sixAmRow) {
+      container.scrollTop = sixAmRow.offsetTop;
+    }
+  }, [currentDate]);
 
   const startDate = startOfWeek(currentDate, { weekStartsOn: 1 }); // Monday
   const weekDays = Array.from({ length: 7 }).map((_, i) => addDays(startDate, i));
@@ -252,9 +263,9 @@ export function CalendarWeek({ currentDate, onAddEvent, onEditEvent }: CalendarW
       </div>
 
       {/* Grid */}
-      <div className="overflow-y-auto max-h-[60vh] relative pb-20">
+      <div ref={scheduleRef} className="overflow-y-auto max-h-[60vh] relative pb-20">
         {hours.map(hour => (
-          <div key={hour} className="flex min-h-[40px] border-b border-[rgba(255,255,255,0.05)]">
+          <div key={hour} data-hour={hour} className="flex min-h-[40px] border-b border-[rgba(255,255,255,0.05)]">
             <div className="w-10 flex-shrink-0 text-[10px] text-gray-500 text-right pr-2 pt-1 font-medium">
               {hour === 0 ? '12a' : hour <= 11 ? `${hour}a` : hour === 12 ? '12p' : `${hour - 12}p`}
             </div>
