@@ -4,9 +4,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { CalendarWeek } from '@/components/CalendarWeek';
 import { EventModal } from '@/components/EventModal';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
-import { format, subWeeks, addWeeks, subDays, addDays, isSameDay, parseISO, getHours, getDay, getDate, isBefore, isAfter, lastDayOfMonth } from 'date-fns';
+import { format, subWeeks, addWeeks, subDays, addDays, parseISO, getDay, getDate, isBefore, isAfter, lastDayOfMonth } from 'date-fns';
 import { useData } from '@/lib/DataContext';
-import { CalendarEvent } from '@/lib/types';
+import { CalendarEvent, SessionType } from '@/lib/types';
+import { useRouter } from 'next/navigation';
+import { computeDurationMinutes, mapCalendarEventToSessionType } from '@/lib/calendarLogSession';
 
 // Parse "HH:mm" into { hour, minute }
 function parseTime(timeStr: string): { hour: number; minute: number } {
@@ -38,6 +40,8 @@ function getHourCellCoverage(
 interface RenderedEvent {
   event: CalendarEvent;
   isRecurringInstance: boolean;
+  instanceDate: string;
+  eventTypeId: string;
   startHour: number;
   startMinute: number;
   endHour: number;
@@ -95,6 +99,7 @@ function computeOverlapGroups(events: RenderedEvent[], maxCols: number): Map<str
 }
 
 export default function CalendarPage() {
+  const router = useRouter();
   const [view, setView] = useState<'Day' | 'Week'>('Week');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showEventModal, setShowEventModal] = useState(false);
@@ -103,6 +108,13 @@ export default function CalendarPage() {
   const [editingIsRecurring, setEditingIsRecurring] = useState(false);
   const [editingInstanceDate, setEditingInstanceDate] = useState<string | undefined>(undefined);
   const [defaultStartHour, setDefaultStartHour] = useState<number | undefined>(undefined);
+  const [logSessionPrompt, setLogSessionPrompt] = useState<{
+    x: number;
+    y: number;
+    date: string;
+    duration: number;
+    sessionType: SessionType;
+  } | null>(null);
 
   const handlePrev = () => {
     if (view === 'Week') setCurrentDate(subWeeks(currentDate, 1));
@@ -140,13 +152,34 @@ export default function CalendarPage() {
     setDefaultStartHour(undefined);
   };
 
+  const handleEventLongPress = (payload: { x: number; y: number; date: string; duration: number; sessionType: SessionType }) => {
+    setLogSessionPrompt({
+      x: payload.x,
+      y: payload.y,
+      date: payload.date,
+      duration: payload.duration,
+      sessionType: payload.sessionType,
+    });
+  };
+
+  const handleLogSession = () => {
+    if (!logSessionPrompt) return;
+    const params = new URLSearchParams({
+      open: 'training',
+      date: logSessionPrompt.date,
+      duration: String(logSessionPrompt.duration),
+      sessionType: logSessionPrompt.sessionType,
+    });
+    router.push(`/log?${params.toString()}`);
+  };
+
   const getViewLabel = () => {
     if (view === 'Week') return `Week of ${format(currentDate, 'MMM d')}`;
     if (view === 'Day') return format(currentDate, 'MMM d, yyyy');
   };
 
   return (
-    <div className="px-4 py-8 max-w-md mx-auto h-full flex flex-col relative pb-20">
+    <div className="px-4 py-8 max-w-md mx-auto h-full flex flex-col relative pb-20" onClick={() => setLogSessionPrompt(null)}>
       <header className="mb-6 pl-1 flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight">Schedule</h1>
@@ -195,6 +228,7 @@ export default function CalendarPage() {
             currentDate={currentDate} 
             onAddEvent={handleAddEvent} 
             onEditEvent={handleEditEvent} 
+            onEventLongPress={handleEventLongPress}
           />
         )}
         {view === 'Day' && (
@@ -202,9 +236,24 @@ export default function CalendarPage() {
             currentDate={currentDate} 
             onAddEvent={handleAddEvent} 
             onEditEvent={handleEditEvent} 
+            onEventLongPress={handleEventLongPress}
           />
         )}
       </div>
+
+      {logSessionPrompt && (
+        <button
+          type="button"
+          className="fixed z-[95] bg-[var(--accent-primary)] text-black font-bold text-xs px-3 py-2 rounded-full shadow-xl border border-black/20"
+          style={{ left: `${logSessionPrompt.x}px`, top: `${logSessionPrompt.y}px`, transform: 'translate(-50%, -130%)' }}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleLogSession();
+          }}
+        >
+          Log session
+        </button>
+      )}
 
       {showEventModal && (
         <EventModal 
@@ -222,13 +271,16 @@ export default function CalendarPage() {
 
 // ---- Inline Day View Component ----
 
-function DayView({ currentDate, onAddEvent, onEditEvent }: { 
+function DayView({ currentDate, onAddEvent, onEditEvent, onEventLongPress }: { 
   currentDate: Date; 
   onAddEvent: (dateStr: string, hour?: number) => void;
   onEditEvent: (event: CalendarEvent, isRecurringInstance: boolean, instanceDate: string) => void;
+  onEventLongPress: (payload: { x: number; y: number; date: string; duration: number; sessionType: SessionType }) => void;
 }) {
   const { calendarEvents, customEventTypes } = useData();
   const scheduleRef = useRef<HTMLDivElement>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef(false);
 
   useEffect(() => {
     const container = scheduleRef.current;
@@ -239,6 +291,49 @@ function DayView({ currentDate, onAddEvent, onEditEvent }: {
       container.scrollTop = sixAmRow.offsetTop;
     }
   }, [currentDate]);
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current !== null) {
+        window.clearTimeout(longPressTimerRef.current);
+      }
+    };
+  }, []);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const startLongPressTimer = (e: React.PointerEvent, renderedEvent: RenderedEvent) => {
+    clearLongPressTimer();
+    longPressTriggeredRef.current = false;
+
+    const x = e.clientX;
+    const y = e.clientY;
+
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      onEventLongPress({
+        x,
+        y,
+        date: renderedEvent.instanceDate,
+        duration: computeDurationMinutes(
+          renderedEvent.startHour,
+          renderedEvent.startMinute,
+          renderedEvent.endHour,
+          renderedEvent.endMinute
+        ),
+        sessionType: mapCalendarEventToSessionType(
+          renderedEvent.eventTypeId,
+          customEventTypes,
+          renderedEvent.title
+        ),
+      });
+    }, 500);
+  };
 
   const dateStr = format(currentDate, 'yyyy-MM-dd');
   const dayOfWeek = getDay(currentDate) === 0 ? 7 : getDay(currentDate);
@@ -307,6 +402,8 @@ function DayView({ currentDate, onAddEvent, onEditEvent }: {
       renderedEvents.push({
         event,
         isRecurringInstance,
+        instanceDate: dateStr,
+        eventTypeId: finalEventTypeId,
         startHour: finalParsedStart.hour,
         startMinute: finalParsedStart.minute,
         endHour: finalParsedEnd.hour,
@@ -379,7 +476,17 @@ function DayView({ currentDate, onAddEvent, onEditEvent }: {
                         left: totalCols > 1 ? `${col * slotWidth}%` : '0',
                         width: totalCols > 1 ? `${slotWidth}%` : '100%',
                       }}
+                      onPointerDown={(e) => startLongPressTimer(e, re)}
+                      onPointerUp={clearLongPressTimer}
+                      onPointerLeave={clearLongPressTimer}
+                      onPointerCancel={clearLongPressTimer}
+                      onContextMenu={(e) => e.preventDefault()}
                       onClick={(e) => {
+                        if (longPressTriggeredRef.current) {
+                          e.stopPropagation();
+                          longPressTriggeredRef.current = false;
+                          return;
+                        }
                         if (totalCols > 1) {
                           e.stopPropagation();
                           onEditEvent(re.event, re.isRecurringInstance, dateStr);

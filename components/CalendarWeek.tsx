@@ -1,15 +1,17 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
-import { format, addDays, startOfWeek, isSameDay, parseISO, getHours, getDay, getDate, isAfter, isBefore, lastDayOfMonth } from 'date-fns';
-import { CalendarEvent } from '../lib/types';
+import { format, addDays, startOfWeek, isSameDay, parseISO, getDay, getDate, isAfter, isBefore, lastDayOfMonth } from 'date-fns';
+import { CalendarEvent, SessionType } from '../lib/types';
 import { useData } from '../lib/DataContext';
 import { Plus } from 'lucide-react';
+import { computeDurationMinutes, mapCalendarEventToSessionType } from '../lib/calendarLogSession';
 
 interface RenderedEvent {
   event: CalendarEvent;
   isRecurringInstance: boolean;
   instanceDate: string;
+  eventTypeId: string;
   startHour: number;
   startMinute: number;
   endHour: number;
@@ -27,6 +29,7 @@ interface CalendarWeekProps {
   currentDate: Date;
   onAddEvent: (dateStr: string, hour?: number) => void;
   onEditEvent: (event: CalendarEvent, isRecurringInstance: boolean, instanceDate: string) => void;
+  onEventLongPress: (payload: { x: number; y: number; date: string; duration: number; sessionType: SessionType }) => void;
 }
 
 // Parse "HH:mm" into { hour, minute }
@@ -111,9 +114,11 @@ function computeOverlapGroups(events: RenderedEvent[], maxCols: number): Map<str
   return result;
 }
 
-export function CalendarWeek({ currentDate, onAddEvent, onEditEvent }: CalendarWeekProps) {
+export function CalendarWeek({ currentDate, onAddEvent, onEditEvent, onEventLongPress }: CalendarWeekProps) {
   const { calendarEvents, customEventTypes } = useData();
   const scheduleRef = useRef<HTMLDivElement>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef(false);
 
   useEffect(() => {
     const container = scheduleRef.current;
@@ -124,6 +129,49 @@ export function CalendarWeek({ currentDate, onAddEvent, onEditEvent }: CalendarW
       container.scrollTop = sixAmRow.offsetTop;
     }
   }, [currentDate]);
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current !== null) {
+        window.clearTimeout(longPressTimerRef.current);
+      }
+    };
+  }, []);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const startLongPressTimer = (e: React.PointerEvent, renderedEvent: RenderedEvent) => {
+    clearLongPressTimer();
+    longPressTriggeredRef.current = false;
+
+    const x = e.clientX;
+    const y = e.clientY;
+
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      onEventLongPress({
+        x,
+        y,
+        date: renderedEvent.instanceDate,
+        duration: computeDurationMinutes(
+          renderedEvent.startHour,
+          renderedEvent.startMinute,
+          renderedEvent.endHour,
+          renderedEvent.endMinute
+        ),
+        sessionType: mapCalendarEventToSessionType(
+          renderedEvent.eventTypeId,
+          customEventTypes,
+          renderedEvent.title
+        ),
+      });
+    }, 500);
+  };
 
   const startDate = startOfWeek(currentDate, { weekStartsOn: 1 }); // Monday
   const weekDays = Array.from({ length: 7 }).map((_, i) => addDays(startDate, i));
@@ -210,6 +258,7 @@ export function CalendarWeek({ currentDate, onAddEvent, onEditEvent }: CalendarW
           event,
           isRecurringInstance,
           instanceDate: dateStr,
+          eventTypeId: finalEventTypeId,
           startHour: finalParsedStart.hour,
           startMinute: finalParsedStart.minute,
           endHour: finalParsedEnd.hour,
@@ -321,7 +370,17 @@ export function CalendarWeek({ currentDate, onAddEvent, onEditEvent }: CalendarW
                             left: totalCols > 1 ? `${col * slotWidth}%` : '0',
                             width: totalCols > 1 ? `${slotWidth}%` : '100%',
                           }}
+                          onPointerDown={(e) => startLongPressTimer(e, re)}
+                          onPointerUp={clearLongPressTimer}
+                          onPointerLeave={clearLongPressTimer}
+                          onPointerCancel={clearLongPressTimer}
+                          onContextMenu={(e) => e.preventDefault()}
                           onClick={(e) => {
+                            if (longPressTriggeredRef.current) {
+                              e.stopPropagation();
+                              longPressTriggeredRef.current = false;
+                              return;
+                            }
                             if (totalCols > 1) {
                               e.stopPropagation();
                               onEditEvent(re.event, re.isRecurringInstance, re.instanceDate);

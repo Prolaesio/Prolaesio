@@ -1,18 +1,28 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { WellnessForm } from '@/components/WellnessForm';
 import { TrainingForm } from '@/components/TrainingForm';
 import { useData } from '@/lib/DataContext';
-import { format, subDays, addDays, parseISO } from 'date-fns';
+import { format, subDays, addDays, parseISO, isValid } from 'date-fns';
 import { ChevronLeft, ChevronRight, CheckCircle2, Heart, Dumbbell, Moon, Zap, Activity } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { SessionType } from '@/lib/types';
+
+const sessionTypeSet = new Set<SessionType>(['Solo', 'Partner', 'Team', 'Match', 'Gym', 'Other']);
 
 export default function LogPage() {
   const [expandedForm, setExpandedForm] = useState<'wellness' | 'training' | null>(null);
   const [selectedDateObj, setSelectedDateObj] = useState(new Date());
   const [showSuccess, setShowSuccess] = useState(false);
+  const [trainingPrefill, setTrainingPrefill] = useState<{ sessionType?: SessionType; duration?: number } | null>(null);
 
   const { wellnessLogs, trainingLogs } = useData();
+  const searchParams = useSearchParams();
+  const openParam = searchParams.get('open');
+  const dateParam = searchParams.get('date');
+  const durationParam = searchParams.get('duration');
+  const sessionTypeParam = searchParams.get('sessionType');
 
   const selectedDateStr = format(selectedDateObj, 'yyyy-MM-dd');
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -27,6 +37,7 @@ export default function LogPage() {
   const onSaved = () => {
     setShowSuccess(true);
     setExpandedForm(null);
+    setTrainingPrefill(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setTimeout(() => setShowSuccess(false), 3000);
   };
@@ -46,6 +57,29 @@ export default function LogPage() {
   }, [trainingLogs, selectedDateStr]);
 
   const hasAnyLogs = selectedWellness || selectedTrainings.length > 0;
+
+  useEffect(() => {
+    if (openParam !== 'training') return;
+
+    if (dateParam) {
+      const parsed = parseISO(dateParam);
+      if (isValid(parsed)) {
+        setSelectedDateObj(parsed);
+      }
+    }
+
+    const parsedDuration = durationParam ? Number(durationParam) : NaN;
+    const parsedSessionType =
+      sessionTypeParam && sessionTypeSet.has(sessionTypeParam as SessionType)
+        ? (sessionTypeParam as SessionType)
+        : undefined;
+
+    setTrainingPrefill({
+      sessionType: parsedSessionType,
+      duration: Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : undefined,
+    });
+    setExpandedForm('training');
+  }, [openParam, dateParam, durationParam, sessionTypeParam]);
 
   return (
     <div className="px-4 py-8 max-w-md mx-auto">
@@ -112,7 +146,12 @@ export default function LogPage() {
       )}
       {expandedForm === 'training' && (
         <div className="animate-slide-up">
-          <TrainingForm key={`training-${selectedDateStr}`} selectedDate={selectedDateStr} onSaved={onSaved} />
+          <TrainingForm
+            key={`training-${selectedDateStr}-${trainingPrefill?.sessionType || 'default'}-${trainingPrefill?.duration || 'default'}`}
+            selectedDate={selectedDateStr}
+            onSaved={onSaved}
+            initialValues={trainingPrefill || undefined}
+          />
         </div>
       )}
 

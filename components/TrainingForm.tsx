@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useData } from '../lib/DataContext';
 import { Slider } from './ui/Slider';
 import { Toggle } from './ui/Toggle';
@@ -10,15 +10,21 @@ import { v4 as uuidv4 } from 'uuid';
 interface TrainingFormProps {
   onSaved: () => void;
   selectedDate: string; // YYYY-MM-DD
+  initialValues?: {
+    sessionType?: SessionType;
+    duration?: number;
+  };
 }
 
-export function TrainingForm({ onSaved, selectedDate }: TrainingFormProps) {
+export function TrainingForm({ onSaved, selectedDate, initialValues }: TrainingFormProps) {
   const { saveTrainingLog } = useData();
 
   const sessionTypes: SessionType[] = ['Solo', 'Partner', 'Team', 'Match', 'Gym', 'Other'];
-  const [sessionType, setSessionType] = useState<SessionType>('Team');
+  const [sessionType, setSessionType] = useState<SessionType>(initialValues?.sessionType || 'Team');
   
-  const [duration, setDuration] = useState<string>('90');
+  const [duration, setDuration] = useState<string>(
+    initialValues?.duration && initialValues.duration > 0 ? String(initialValues.duration) : '90'
+  );
   const quickDurations = [30, 45, 60, 90, 120];
 
   const [distance, setDistance] = useState<string>('');
@@ -32,6 +38,15 @@ export function TrainingForm({ onSaved, selectedDate }: TrainingFormProps) {
   const [notes, setNotes] = useState<string>('');
 
   const [error, setError] = useState<string>('');
+
+  useEffect(() => {
+    if (initialValues?.sessionType) {
+      setSessionType(initialValues.sessionType);
+    }
+    if (initialValues?.duration && initialValues.duration > 0) {
+      setDuration(String(initialValues.duration));
+    }
+  }, [initialValues?.sessionType, initialValues?.duration, selectedDate]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
