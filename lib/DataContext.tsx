@@ -19,6 +19,7 @@ interface DataContextType {
   saveCalendarEvent: (event: CalendarEvent) => void;
   deleteCalendarEvent: (eventId: string) => void;
   saveCustomEventType: (type: CustomEventType) => void;
+  deleteCustomEventType: (typeId: string) => void;
   saveInjury: (injury: InjuryRecord) => void;
   isLoading: boolean;
 }
@@ -36,6 +37,7 @@ const defaultContext: DataContextType = {
   saveCalendarEvent: () => {},
   deleteCalendarEvent: () => {},
   saveCustomEventType: () => {},
+  deleteCustomEventType: () => {},
   saveInjury: () => {},
   isLoading: true,
 };
@@ -47,7 +49,7 @@ export const useData = () => useContext(DataContext);
 export const DataProvider = ({ children }: { children: ReactNode }) => {
   const { user } = useAuth();
 
-  const [data, setData] = useState<Omit<DataContextType, 'saveProfile' | 'saveWellnessLog' | 'saveTrainingLog' | 'saveCalendarEvent' | 'deleteCalendarEvent' | 'saveCustomEventType' | 'saveInjury'>>({
+  const [data, setData] = useState<Omit<DataContextType, 'saveProfile' | 'saveWellnessLog' | 'saveTrainingLog' | 'saveCalendarEvent' | 'deleteCalendarEvent' | 'saveCustomEventType' | 'deleteCustomEventType' | 'saveInjury'>>({
     profile: null,
     wellnessLogs: {},
     trainingLogs: [],
@@ -152,6 +154,14 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     });
   }, []);
 
+  const deleteCustomEventType = useCallback((typeId: string) => {
+    StorageService.deleteCustomEventType(typeId);
+    setData((prev) => ({
+      ...prev,
+      customEventTypes: prev.customEventTypes.filter((t) => t.id !== typeId),
+    }));
+  }, []);
+
   const saveInjury = useCallback((injury: InjuryRecord) => {
     StorageService.saveInjury(injury);
     setData((prev) => {
@@ -173,6 +183,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         saveCalendarEvent,
         deleteCalendarEvent,
         saveCustomEventType,
+        deleteCustomEventType,
         saveInjury,
       }}
     >

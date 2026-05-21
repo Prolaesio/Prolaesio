@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { CalendarEvent, RecurrenceType } from '../lib/types';
 import { useData } from '../lib/DataContext';
 import { X, Save, Plus, Trash2, Check } from 'lucide-react';
@@ -18,7 +18,51 @@ interface EventModalProps {
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export function EventModal({ onClose, selectedDate, existingEvent, isRecurringInstance, instanceDate, defaultStartHour }: EventModalProps) {
-  const { customEventTypes, saveCalendarEvent, deleteCalendarEvent, saveCustomEventType } = useData();
+  const { customEventTypes, saveCalendarEvent, deleteCalendarEvent, saveCustomEventType, deleteCustomEventType } = useData();
+
+  // --- Event type long-press-to-delete ---
+  const [deleteTypeId, setDeleteTypeId] = useState<string | null>(null);
+  const typeTimerRef = useRef<number | null>(null);
+  const typeLongPressTriggeredRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (typeTimerRef.current !== null) window.clearTimeout(typeTimerRef.current);
+    };
+  }, []);
+
+  const clearTypeTimer = () => {
+    if (typeTimerRef.current !== null) {
+      window.clearTimeout(typeTimerRef.current);
+      typeTimerRef.current = null;
+    }
+  };
+
+  const startTypeTimer = (typeId: string) => {
+    clearTypeTimer();
+    typeLongPressTriggeredRef.current = false;
+    typeTimerRef.current = window.setTimeout(() => {
+      typeLongPressTriggeredRef.current = true;
+      setDeleteTypeId(typeId);
+    }, 600);
+  };
+
+  const handleTypeClick = (typeId: string) => {
+    if (typeLongPressTriggeredRef.current) {
+      typeLongPressTriggeredRef.current = false;
+      return;
+    }
+    setEventTypeId(typeId);
+  };
+
+  const handleDeleteType = (typeId: string) => {
+    deleteCustomEventType(typeId);
+    setDeleteTypeId(null);
+    if (eventTypeId === typeId) {
+      const remaining = customEventTypes.filter(t => t.id !== typeId);
+      setEventTypeId(remaining[0]?.id || 'other');
+    }
+  };
   
   const isEditing = !!existingEvent;
 
@@ -216,7 +260,12 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
                 {customEventTypes.map(type => (
                   <button
                     key={type.id}
-                    onClick={() => setEventTypeId(type.id)}
+                    onClick={() => handleTypeClick(type.id)}
+                    onPointerDown={() => !type.isBuiltIn && startTypeTimer(type.id)}
+                    onPointerUp={clearTypeTimer}
+                    onPointerLeave={clearTypeTimer}
+                    onPointerCancel={clearTypeTimer}
+                    onContextMenu={(e) => !type.isBuiltIn && e.preventDefault()}
                     className={`px-3 py-2 rounded-lg text-xs font-bold transition-all border ${
                       eventTypeId === type.id 
                         ? 'border-transparent text-black' 
@@ -270,6 +319,29 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
               </div>
             )}
           </div>
+
+          {/* Delete Event Type Confirmation Popup */}
+          {deleteTypeId && (
+            <div className="mt-2 p-3 rounded-xl bg-[rgba(255,107,107,0.1)] border border-[rgba(255,107,107,0.3)] animate-fade-in">
+              <p className="text-xs text-gray-200 mb-3">
+                Delete <span className="font-bold text-white">&ldquo;{customEventTypes.find(t => t.id === deleteTypeId)?.name}&rdquo;</span>?
+              </p>
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => handleDeleteType(deleteTypeId)}
+                  className="flex-1 py-2 rounded-lg text-xs font-bold bg-[#ff6b6b] text-white flex items-center justify-center transition-transform active:scale-95"
+                >
+                  <Trash2 size={14} className="mr-1.5" /> Delete Event Type
+                </button>
+                <button
+                  onClick={() => setDeleteTypeId(null)}
+                  className="px-4 py-2 rounded-lg text-xs font-medium text-gray-400 bg-[rgba(255,255,255,0.05)] hover:text-white"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Feature 6: Date Selector */}
           <div className="mb-5">

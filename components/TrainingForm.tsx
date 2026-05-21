@@ -25,7 +25,7 @@ export function TrainingForm({ onSaved, selectedDate, initialValues }: TrainingF
   const [duration, setDuration] = useState<string>(
     initialValues?.duration && initialValues.duration > 0 ? String(initialValues.duration) : '90'
   );
-  const quickDurations = [30, 45, 60, 90, 120];
+  const quickDurations = [30, 45, 60, 90];
 
   const [distance, setDistance] = useState<string>('');
   const [intensity, setIntensity] = useState<number>(7);
@@ -130,7 +130,7 @@ export function TrainingForm({ onSaved, selectedDate, initialValues }: TrainingF
             type="number"
             value={duration}
             onChange={(e) => setDuration(e.target.value)}
-            className="w-20 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg p-2 text-white text-center ml-2 touch-target"
+            className="w-20 bg-[rgba(255,255,255,0.05)] border-2 border-[rgba(255,255,255,0.35)] rounded-lg p-2 text-white text-center ml-2 touch-target"
           />
         </div>
 

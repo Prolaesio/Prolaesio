@@ -277,7 +277,7 @@ function DayView({ currentDate, onAddEvent, onEditEvent, onEventLongPress }: {
   onEditEvent: (event: CalendarEvent, isRecurringInstance: boolean, instanceDate: string) => void;
   onEventLongPress: (payload: { x: number; y: number; date: string; duration: number; sessionType: SessionType }) => void;
 }) {
-  const { calendarEvents, customEventTypes } = useData();
+  const { calendarEvents, customEventTypes, trainingLogs } = useData();
   const scheduleRef = useRef<HTMLDivElement>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
@@ -417,6 +417,18 @@ function DayView({ currentDate, onAddEvent, onEditEvent, onEventLongPress }: {
   // Precompute persistent column layout (max 4 for day view)
   const layout = computeOverlapGroups(renderedEvents, 4);
 
+  // Feature 4: Recent activity highlight
+  const TRAINING_TYPE_IDS = ['team-training', 'personal-training', 'gym', 'match'];
+  const shouldHighlightEvent = (re: RenderedEvent): boolean => {
+    if (!TRAINING_TYPE_IDS.includes(re.eventTypeId)) return false;
+    const now = new Date();
+    const endDateTime = new Date(`${re.instanceDate}T${String(re.endHour).padStart(2, '0')}:${String(re.endMinute).padStart(2, '0')}:00`);
+    const diffMs = now.getTime() - endDateTime.getTime();
+    if (diffMs <= 0 || diffMs >= 12 * 60 * 60 * 1000) return false;
+    const hasLog = trainingLogs.some(log => log.date === re.instanceDate);
+    return !hasLog;
+  };
+
   const getEventsAtHour = (hour: number) => renderedEvents.filter(re => {
     const coverage = getHourCellCoverage(hour, re.startHour, re.startMinute, re.endHour, re.endMinute);
     return coverage !== null;
@@ -464,6 +476,7 @@ function DayView({ currentDate, onAddEvent, onEditEvent, onEventLongPress }: {
                   const col = evLayout?.column ?? 0;
                   const totalCols = evLayout?.totalColumns ?? 1;
                   const slotWidth = 100 / totalCols;
+                  const highlighted = shouldHighlightEvent(re);
 
                   return (
                     <div
@@ -475,6 +488,14 @@ function DayView({ currentDate, onAddEvent, onEditEvent, onEventLongPress }: {
                         height: `${coverage.height * 100}%`,
                         left: totalCols > 1 ? `${col * slotWidth}%` : '0',
                         width: totalCols > 1 ? `${slotWidth}%` : '100%',
+                        ...(highlighted ? {
+                          opacity: 1,
+                          zIndex: 5,
+                          ['--glow-color' as string]: `${re.color}cc`,
+                          ['--glow-color-soft' as string]: `${re.color}44`,
+                          animation: 'glowPulse 2s ease-in-out infinite',
+                          borderRadius: '4px',
+                        } : {}),
                       }}
                       onPointerDown={(e) => startLongPressTimer(e, re)}
                       onPointerUp={clearLongPressTimer}

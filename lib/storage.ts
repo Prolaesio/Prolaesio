@@ -266,6 +266,15 @@ export class StorageService {
     if (error) console.error('Error saving custom event type:', error);
   }
 
+  static async deleteCustomEventType(typeId: string): Promise<void> {
+    const { error } = await supabase
+      .from('custom_event_types')
+      .delete()
+      .eq('id', typeId);
+
+    if (error) console.error('Error deleting custom event type:', error);
+  }
+
   // --- Injuries ---
   static async getInjuries(): Promise<InjuryRecord[]> {
     const { data, error } = await supabase
