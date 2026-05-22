@@ -6,6 +6,7 @@ import { AuthGate } from "@/components/AuthGate";
 import { DataProvider } from "@/lib/DataContext";
 import { BottomNav } from "@/components/BottomNav";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { OnboardingGate } from "@/components/OnboardingGate";
 
 const outfit = Outfit({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"] });
 
@@ -42,13 +43,15 @@ export default function RootLayout({
         <AuthProvider>
           <AuthGate>
             <DataProvider>
-              <div className="max-w-md mx-auto min-h-screen relative shadow-2xl bg-[var(--background)] overflow-hidden flex flex-col">
-                <OfflineBanner />
-                <main className="flex-1 overflow-y-auto pb-24">
-                  {children}
-                </main>
-                <BottomNav />
-              </div>
+              <OnboardingGate>
+                <div className="max-w-md mx-auto min-h-screen relative shadow-2xl bg-[var(--background)] overflow-hidden flex flex-col">
+                  <OfflineBanner />
+                  <main className="flex-1 overflow-y-auto pb-24">
+                    {children}
+                  </main>
+                  <BottomNav />
+                </div>
+              </OnboardingGate>
             </DataProvider>
           </AuthGate>
         </AuthProvider>

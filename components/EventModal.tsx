@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { CalendarEvent, RecurrenceType } from '../lib/types';
 import { useData } from '../lib/DataContext';
-import { X, Save, Plus, Trash2, Check } from 'lucide-react';
+import { X, Save, Plus, Trash2, Check, FileText, ChevronDown } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
 interface EventModalProps {
@@ -96,13 +96,34 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
   const [applyOnlyToThis, setApplyOnlyToThis] = useState(false);
   const [anticipatedIntensity, setAnticipatedIntensity] = useState<'Low' | 'Moderate' | 'High' | undefined>(existingEvent?.anticipatedIntensity);
 
-  // Event types that support anticipated intensity
-  const TRAINING_TYPE_IDS = ['team-training', 'personal-training', 'gym', 'match'];
-  const showIntensityPicker = TRAINING_TYPE_IDS.includes(eventTypeId);
+  // Description: collapsed row by default, expands into a textarea on click.
+  // For recurring-instance edits, prefer any per-occurrence override description.
+  const initialDescription = (() => {
+    if (existingEvent && isRecurringInstance && instanceDate) {
+      const override = existingEvent.overrides?.[instanceDate];
+      if (override && Object.prototype.hasOwnProperty.call(override, 'description')) {
+        return override.description || '';
+      }
+    }
+    return existingEvent?.description || '';
+  })();
+  const [description, setDescription] = useState<string>(initialDescription);
+  // If editing an event that already has a description, start expanded so it's visible.
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState<boolean>(!!initialDescription);
+
+  // Event types that support anticipated intensity are now driven by the
+  // type's `isActivity` flag rather than a hardcoded id list. While the user
+  // is creating a new type, fall back to the in-form Activity toggle.
+  const selectedType = customEventTypes.find(t => t.id === eventTypeId);
 
   const [isCreatingNewType, setIsCreatingNewType] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
   const [newTypeColor, setNewTypeColor] = useState('#845ef7');
+  const [newTypeIsActivity, setNewTypeIsActivity] = useState(false);
+
+  const showIntensityPicker = isCreatingNewType
+    ? newTypeIsActivity
+    : !!selectedType?.isActivity;
 
   const toggleDay = (day: number) => {
     if (selectedDays.includes(day)) {
@@ -130,16 +151,18 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
       name: newTypeName.trim(),
       color: newTypeColor,
       isBuiltIn: false,
+      isActivity: newTypeIsActivity,
     });
     setEventTypeId(newId);
     setIsCreatingNewType(false);
     setNewTypeName('');
     setNewTypeColor('#845ef7');
+    setNewTypeIsActivity(false);
   };
 
   const handleSave = () => {
     let finalEventTypeId = eventTypeId;
-    
+
     // If still in new-type creation mode and there's a name, save it on event save too
     if (isCreatingNewType && newTypeName.trim()) {
       finalEventTypeId = uuidv4();
@@ -147,9 +170,22 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
         id: finalEventTypeId,
         name: newTypeName.trim(),
         color: newTypeColor,
-        isBuiltIn: false
+        isBuiltIn: false,
+        isActivity: newTypeIsActivity,
       });
     }
+
+    // Resolve which type ultimately drives this event so the intensity field
+    // is only persisted for activity-type events.
+    const finalSelectedType =
+      customEventTypes.find(t => t.id === finalEventTypeId) ||
+      (isCreatingNewType && newTypeName.trim()
+        ? { isActivity: newTypeIsActivity }
+        : undefined);
+    const finalIsActivity = !!finalSelectedType?.isActivity;
+    const resolvedAnticipatedIntensity = finalIsActivity
+      ? anticipatedIntensity
+      : undefined;
 
     // Single-instance edit of a recurring event
     if (isEditing && isRecurringInstance && applyOnlyToThis && instanceDate && existingEvent) {
@@ -157,6 +193,7 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
       if (!updatedEvent.overrides) updatedEvent.overrides = {};
       updatedEvent.overrides[instanceDate] = {
         title,
+        description: description || undefined,
         eventTypeId: finalEventTypeId,
         start: `${instanceDate}T${startTime}`,
         end: `${instanceDate}T${endTime}`,
@@ -172,6 +209,7 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
       id: isEditing && existingEvent ? existingEvent.id : uuidv4(),
       eventTypeId: finalEventTypeId,
       title: title || undefined,
+      description: description.trim() ? description : undefined,
       start: `${dateToUse}T${startTime}`,
       end: `${dateToUse}T${endTime}`,
       recurrence,
@@ -183,7 +221,7 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
       recurrenceEndDate: recurrence !== 'none' && recurrenceEndDate ? recurrenceEndDate : undefined, // Feature 7
       excludedDates: existingEvent?.excludedDates,
       overrides: existingEvent?.overrides,
-      anticipatedIntensity: TRAINING_TYPE_IDS.includes(finalEventTypeId) ? anticipatedIntensity : undefined,
+      anticipatedIntensity: resolvedAnticipatedIntensity,
     };
 
     saveCalendarEvent(event);
@@ -261,11 +299,11 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
                   <button
                     key={type.id}
                     onClick={() => handleTypeClick(type.id)}
-                    onPointerDown={() => !type.isBuiltIn && startTypeTimer(type.id)}
+                    onPointerDown={() => startTypeTimer(type.id)}
                     onPointerUp={clearTypeTimer}
                     onPointerLeave={clearTypeTimer}
                     onPointerCancel={clearTypeTimer}
-                    onContextMenu={(e) => !type.isBuiltIn && e.preventDefault()}
+                    onContextMenu={(e) => e.preventDefault()}
                     className={`px-3 py-2 rounded-lg text-xs font-bold transition-all border ${
                       eventTypeId === type.id 
                         ? 'border-transparent text-black' 
@@ -292,6 +330,30 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
                   onChange={(e) => setNewTypeName(e.target.value)}
                   className="w-full bg-transparent border-b border-[rgba(255,255,255,0.1)] pb-2 mb-3 text-white text-sm focus:outline-none"
                 />
+
+                {/* Activity Event toggle */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-semibold text-gray-200">Activity Event</span>
+                    <span className="text-[10px] text-gray-500">Adds an anticipated intensity</span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={newTypeIsActivity}
+                    onClick={() => setNewTypeIsActivity(v => !v)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                      newTypeIsActivity ? 'bg-[var(--accent-primary)]' : 'bg-gray-600'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        newTypeIsActivity ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
                 <div className="flex items-center space-x-3">
                   <span className="text-xs text-gray-400">Color:</span>
                   <input 
@@ -310,7 +372,12 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
                     <Check size={12} className="mr-1" /> Save Type
                   </button>
                   <button 
-                    onClick={() => setIsCreatingNewType(false)}
+                    onClick={() => {
+                      setIsCreatingNewType(false);
+                      setNewTypeName('');
+                      setNewTypeColor('#845ef7');
+                      setNewTypeIsActivity(false);
+                    }}
                     className="text-xs text-gray-400 hover:text-white px-2 py-1"
                   >
                     Cancel
@@ -506,6 +573,45 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
               </div>
             </div>
           )}
+
+          {/* Description — collapsed row by default, expands into a textarea */}
+          <div className="mb-6">
+            {!isDescriptionExpanded ? (
+              <button
+                type="button"
+                onClick={() => setIsDescriptionExpanded(true)}
+                className="w-full flex items-center justify-between p-3 rounded-xl bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] text-gray-300 hover:text-white hover:border-[rgba(255,255,255,0.2)] transition-colors touch-target"
+              >
+                <span className="flex items-center text-sm">
+                  <FileText size={16} className="mr-2 text-gray-400" />
+                  Add a description
+                </span>
+                <ChevronDown size={16} className="text-gray-400" />
+              </button>
+            ) : (
+              <div className="animate-fade-in">
+                <div className="flex justify-between items-center mb-2">
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    Description <span className="text-gray-600">(optional)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsDescriptionExpanded(false)}
+                    className="text-[10px] text-gray-500 hover:text-gray-300 underline"
+                  >
+                    Collapse
+                  </button>
+                </div>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Session summary, training plan, notes, or any extra details..."
+                  rows={5}
+                  className="w-full bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-xl p-3 text-white text-sm focus:border-[var(--accent-primary)] focus:outline-none resize-y min-h-[120px]"
+                />
+              </div>
+            )}
+          </div>
 
           {/* Action Buttons */}
           <div className="space-y-3">

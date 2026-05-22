@@ -10,6 +10,9 @@ export function ProfileForm() {
   const { profile, saveProfile } = useData();
 
   const [dateOfBirth, setDateOfBirth] = useState<string>('');
+  const [heightCm, setHeightCm] = useState<string>('');
+  const [weightKg, setWeightKg] = useState<string>('');
+  const [teamCode, setTeamCode] = useState<string>('');
   const [positions, setPositions] = useState<Position[]>([]);
   const [priorities, setPriorities] = useState<Priority[]>([]);
   const [error, setError] = useState<string>('');
@@ -23,6 +26,9 @@ export function ProfileForm() {
   useEffect(() => {
     if (profile) {
       setDateOfBirth(profile.dateOfBirth || '');
+      setHeightCm(profile.heightCm != null ? String(profile.heightCm) : '');
+      setWeightKg(profile.weightKg != null ? String(profile.weightKg) : '');
+      setTeamCode(profile.teamCode || '');
       setPositions(profile.positions);
       setPriorities(profile.priorities);
     }
@@ -62,12 +68,32 @@ export function ProfileForm() {
       return;
     }
 
-    saveProfile({
+    const heightNum = heightCm ? Number(heightCm) : undefined;
+    if (heightCm && (Number.isNaN(heightNum!) || heightNum! <= 0 || heightNum! > 260)) {
+      setError('Please enter a valid height in centimeters.');
+      return;
+    }
+
+    const weightNum = weightKg ? Number(weightKg) : undefined;
+    if (weightKg && (Number.isNaN(weightNum!) || weightNum! <= 0 || weightNum! > 250)) {
+      setError('Please enter a valid weight in kilograms.');
+      return;
+    }
+
+    const next: UserProfile = {
+      ...profile,
       age: computedAge,
       dateOfBirth,
       positions,
       priorities,
-    });
+      heightCm: heightNum,
+      weightKg: weightNum,
+      teamCode: teamCode.trim() || undefined,
+      availability: profile?.availability,
+      trainingResources: profile?.trainingResources,
+      onboardingCompleted: profile?.onboardingCompleted ?? true,
+    };
+    saveProfile(next);
     alert('Profile saved successfully');
   };
 
@@ -99,6 +125,52 @@ export function ProfileForm() {
         {formattedDOB && (
           <p className="text-xs text-gray-500 mt-1.5">{formattedDOB}</p>
         )}
+      </div>
+
+      {/* Height & Weight */}
+      <div className="mb-6 grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-400 mb-2">Height (cm)</label>
+          <input
+            type="number"
+            inputMode="decimal"
+            min={50}
+            max={260}
+            step="0.1"
+            value={heightCm}
+            onChange={(e) => { setHeightCm(e.target.value); setError(''); }}
+            placeholder="e.g. 175"
+            className="w-full bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg p-3 text-white touch-target"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-400 mb-2">Weight (kg)</label>
+          <input
+            type="number"
+            inputMode="decimal"
+            min={20}
+            max={250}
+            step="0.1"
+            value={weightKg}
+            onChange={(e) => { setWeightKg(e.target.value); setError(''); }}
+            placeholder="e.g. 68"
+            className="w-full bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg p-3 text-white touch-target"
+          />
+        </div>
+      </div>
+
+      {/* Team / Coach Code */}
+      <div className="mb-6">
+        <label className="block text-xs font-medium text-gray-400 mb-2">
+          Team / Coach Code <span className="text-gray-600">(optional)</span>
+        </label>
+        <input
+          type="text"
+          value={teamCode}
+          onChange={(e) => setTeamCode(e.target.value)}
+          placeholder="Enter team code"
+          className="w-full bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg p-3 text-white text-sm touch-target"
+        />
       </div>
 
       {error && (

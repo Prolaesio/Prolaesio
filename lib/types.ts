@@ -12,11 +12,29 @@ export type Priority =
   | 'Stamina'
   | 'Strength';
 
+// Resources/environments the player has access to for training recommendations.
+export type TrainingResource =
+  | 'gym'
+  | 'soccer-field'
+  | 'open-area'
+  | 'wall'
+  | 'treadmill-or-outdoor-runs';
+
+// Weekly availability map: ISO weekday (1 = Monday … 7 = Sunday) -> selected hours (0-23).
+export type WeeklyAvailability = Record<number, number[]>;
+
 export interface UserProfile {
   age: number; // 1-99 (computed from dateOfBirth)
   dateOfBirth?: string; // YYYY-MM-DD
   positions: Position[];
   priorities: Priority[];
+  // --- Onboarding additions (all optional so existing profiles keep working) ---
+  heightCm?: number;
+  weightKg?: number;
+  teamCode?: string;
+  availability?: WeeklyAvailability;
+  trainingResources?: TrainingResource[];
+  onboardingCompleted?: boolean;
 }
 
 export interface WellnessLog {
@@ -63,6 +81,7 @@ export interface CalendarEvent {
   id: string;
   eventTypeId: string;
   title?: string; // optional — user can leave blank
+  description?: string; // optional — session summary, training plan, notes, etc.
   start: string; // ISO string or YYYY-MM-DDTHH:mm
   end: string;   // ISO string or YYYY-MM-DDTHH:mm
   color?: string; // override custom color
@@ -79,7 +98,8 @@ export interface CustomEventType {
   name: string; // e.g., 'School', 'Team Training'
   color: string; // hex
   icon?: string; // name of lucide-react icon
-  isBuiltIn?: boolean; // system defaults cannot be deleted
+  isBuiltIn?: boolean; // marks built-in/default types (still deletable per user)
+  isActivity?: boolean; // when true, this event type represents physical activity and supports intensity
 }
 
 export type InjuryStatus = 'active' | 'recovering' | 'resolved';

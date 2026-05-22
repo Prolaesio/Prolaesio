@@ -27,6 +27,12 @@ export class StorageService {
       dateOfBirth: data.date_of_birth ?? undefined,
       positions: data.positions || [],
       priorities: data.priorities || [],
+      heightCm: data.height_cm != null ? Number(data.height_cm) : undefined,
+      weightKg: data.weight_kg != null ? Number(data.weight_kg) : undefined,
+      teamCode: data.team_code ?? undefined,
+      availability: data.availability ?? undefined,
+      trainingResources: data.training_resources ?? undefined,
+      onboardingCompleted: data.onboarding_completed ?? false,
     };
   }
 
@@ -42,6 +48,12 @@ export class StorageService {
         date_of_birth: profile.dateOfBirth ?? null,
         positions: profile.positions,
         priorities: profile.priorities,
+        height_cm: profile.heightCm ?? null,
+        weight_kg: profile.weightKg ?? null,
+        team_code: profile.teamCode ?? null,
+        availability: profile.availability ?? {},
+        training_resources: profile.trainingResources ?? [],
+        onboarding_completed: profile.onboardingCompleted ?? false,
       }, { onConflict: 'id' });
 
     if (error) console.error('Error saving profile:', error);
@@ -214,28 +226,32 @@ export class StorageService {
   // --- Custom Event Types ---
   static async getCustomEventTypes(): Promise<CustomEventType[]> {
     const defaultTypes: CustomEventType[] = [
-      { id: 'school', name: 'School', color: '#4a9eff', icon: 'Book', isBuiltIn: true },
-      { id: 'team-training', name: 'Team Training', color: '#00d4aa', icon: 'Users', isBuiltIn: true },
-      { id: 'match', name: 'Match', color: '#ff6b6b', icon: 'Trophy', isBuiltIn: true },
-      { id: 'personal-training', name: 'Personal Training', color: '#ffd43b', icon: 'Activity', isBuiltIn: true },
-      { id: 'gym', name: 'Gym', color: '#845ef7', icon: 'Dumbbell', isBuiltIn: true },
-      { id: 'other', name: 'Other', color: '#adb5bd', icon: 'Calendar', isBuiltIn: true },
+      { id: 'school', name: 'School', color: '#4a9eff', icon: 'Book', isBuiltIn: true, isActivity: false },
+      { id: 'team-training', name: 'Team Training', color: '#00d4aa', icon: 'Users', isBuiltIn: true, isActivity: true },
+      { id: 'match', name: 'Match', color: '#ff6b6b', icon: 'Trophy', isBuiltIn: true, isActivity: true },
+      { id: 'personal-training', name: 'Personal Training', color: '#ffd43b', icon: 'Activity', isBuiltIn: true, isActivity: true },
+      { id: 'gym', name: 'Gym', color: '#845ef7', icon: 'Dumbbell', isBuiltIn: true, isActivity: true },
+      { id: 'other', name: 'Other', color: '#adb5bd', icon: 'Calendar', isBuiltIn: true, isActivity: false },
     ];
 
     const { data, error } = await supabase
       .from('custom_event_types')
       .select('*');
 
-    const overrides: CustomEventType[] = (error || !data) ? [] : data.map((row: any) => ({
+    type EventTypeRow = CustomEventType & { isDeleted?: boolean };
+
+    const overrides: EventTypeRow[] = (error || !data) ? [] : data.map((row: any) => ({
       id: row.id,
       name: row.name,
       color: row.color,
       icon: row.icon ?? undefined,
       isBuiltIn: row.is_built_in ?? false,
+      isActivity: row.is_activity ?? false,
+      isDeleted: row.is_deleted ?? false,
     }));
 
-    // Merge built-in configuration with user overrides
-    const mappedTypes = [...defaultTypes];
+    // Merge built-in configuration with user overrides, then drop tombstoned types
+    const mappedTypes: EventTypeRow[] = [...defaultTypes];
     overrides.forEach((o) => {
       const idx = mappedTypes.findIndex((m) => m.id === o.id);
       if (idx >= 0) {
@@ -245,7 +261,9 @@ export class StorageService {
       }
     });
 
-    return mappedTypes;
+    return mappedTypes
+      .filter((t) => !t.isDeleted)
+      .map(({ isDeleted: _isDeleted, ...rest }) => rest);
   }
 
   static async saveCustomEventType(eventType: CustomEventType): Promise<void> {
@@ -261,12 +279,48 @@ export class StorageService {
         color: eventType.color,
         icon: eventType.icon ?? null,
         is_built_in: eventType.isBuiltIn ?? false,
+        is_activity: eventType.isActivity ?? false,
+        is_deleted: false,
       }, { onConflict: 'id,user_id' });
 
     if (error) console.error('Error saving custom event type:', error);
   }
 
+  // Built-in/default event type IDs are defined in code, not the database, so
+  // a hard delete would just resurrect them on the next read. For those, we
+  // upsert a tombstone row (`is_deleted = true`) keyed by (id, user_id) so the
+  // type is hidden for that user only.
+  private static readonly BUILT_IN_EVENT_TYPE_IDS = new Set<string>([
+    'school',
+    'team-training',
+    'match',
+    'personal-training',
+    'gym',
+    'other',
+  ]);
+
   static async deleteCustomEventType(typeId: string): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (StorageService.BUILT_IN_EVENT_TYPE_IDS.has(typeId)) {
+      if (!user) return;
+      const { error } = await supabase
+        .from('custom_event_types')
+        .upsert({
+          id: typeId,
+          user_id: user.id,
+          name: typeId,
+          color: '#000000',
+          icon: null,
+          is_built_in: true,
+          is_activity: false,
+          is_deleted: true,
+        }, { onConflict: 'id,user_id' });
+
+      if (error) console.error('Error hiding built-in event type:', error);
+      return;
+    }
+
     const { error } = await supabase
       .from('custom_event_types')
       .delete()

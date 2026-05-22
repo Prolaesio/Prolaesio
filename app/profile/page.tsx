@@ -1,18 +1,49 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ProfileForm } from '@/components/ProfileForm';
 import { InjuryTracker } from '@/components/InjuryTracker';
+import { WeeklyAvailabilityGrid } from '@/components/WeeklyAvailabilityGrid';
+import { TrainingResourcePicker } from '@/components/TrainingResourcePicker';
 import { useData } from '@/lib/DataContext';
 import { useAuth } from '@/lib/AuthContext';
-import { LogOut, Mail } from 'lucide-react';
+import { LogOut, Mail, Save, ChevronDown } from 'lucide-react';
+import { TrainingResource, WeeklyAvailability } from '@/lib/types';
 
 export default function ProfilePage() {
-  const { profile } = useData();
+  const { profile, saveProfile } = useData();
   const { user, signOut } = useAuth();
+
+  const [availability, setAvailability] = useState<WeeklyAvailability>({});
+  const [resources, setResources] = useState<TrainingResource[]>([]);
+  const [availabilitySaved, setAvailabilitySaved] = useState(false);
+  const [resourcesSaved, setResourcesSaved] = useState(false);
+  const [availabilityOpen, setAvailabilityOpen] = useState(false);
+  const [resourcesOpen, setResourcesOpen] = useState(false);
+
+  useEffect(() => {
+    if (profile) {
+      setAvailability(profile.availability || {});
+      setResources(profile.trainingResources || []);
+    }
+  }, [profile]);
 
   const handleSignOut = async () => {
     await signOut();
+  };
+
+  const handleSaveAvailability = () => {
+    if (!profile) return;
+    saveProfile({ ...profile, availability });
+    setAvailabilitySaved(true);
+    window.setTimeout(() => setAvailabilitySaved(false), 2000);
+  };
+
+  const handleSaveResources = () => {
+    if (!profile) return;
+    saveProfile({ ...profile, trainingResources: resources });
+    setResourcesSaved(true);
+    window.setTimeout(() => setResourcesSaved(false), 2000);
   };
 
   return (
@@ -32,6 +63,74 @@ export default function ProfilePage() {
       {/* Tabs / sections */}
       <div className="space-y-8">
         <ProfileForm />
+
+        {profile && (
+          <div className="glass-card p-5 animate-slide-up">
+            <button
+              type="button"
+              onClick={() => setAvailabilityOpen(o => !o)}
+              aria-expanded={availabilityOpen}
+              className="w-full flex items-center justify-between text-left touch-target"
+            >
+              <h3 className="text-[var(--accent-primary)] font-bold uppercase tracking-wider text-xs">
+                Weekly Availability
+              </h3>
+              <ChevronDown
+                size={18}
+                className={`text-gray-400 transition-transform ${availabilityOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+            {availabilityOpen && (
+              <div className="mt-4 animate-fade-in">
+                <p className="text-[11px] text-gray-400 mb-4 leading-relaxed">
+                  Tap blocks to mark when you&apos;re normally free for training and individual sessions.
+                </p>
+                <WeeklyAvailabilityGrid value={availability} onChange={setAvailability} />
+                <button
+                  type="button"
+                  onClick={handleSaveAvailability}
+                  className="mt-4 w-full bg-gradient-to-r from-[var(--accent-primary)] to-emerald-500 text-black font-bold py-3 rounded-xl flex items-center justify-center transition-transform active:scale-95"
+                >
+                  <Save className="mr-2" size={18} /> {availabilitySaved ? 'Saved' : 'Save Availability'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {profile && (
+          <div className="glass-card p-5 animate-slide-up">
+            <button
+              type="button"
+              onClick={() => setResourcesOpen(o => !o)}
+              aria-expanded={resourcesOpen}
+              className="w-full flex items-center justify-between text-left touch-target"
+            >
+              <h3 className="text-[var(--accent-primary)] font-bold uppercase tracking-wider text-xs">
+                Training Resources
+              </h3>
+              <ChevronDown
+                size={18}
+                className={`text-gray-400 transition-transform ${resourcesOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+            {resourcesOpen && (
+              <div className="mt-4 animate-fade-in">
+                <p className="text-[11px] text-gray-400 mb-4 leading-relaxed">
+                  Pick the environments you have access to so recommendations can match.
+                </p>
+                <TrainingResourcePicker value={resources} onChange={setResources} />
+                <button
+                  type="button"
+                  onClick={handleSaveResources}
+                  className="mt-4 w-full bg-gradient-to-r from-[var(--accent-primary)] to-emerald-500 text-black font-bold py-3 rounded-xl flex items-center justify-center transition-transform active:scale-95"
+                >
+                  <Save className="mr-2" size={18} /> {resourcesSaved ? 'Saved' : 'Save Resources'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         
         {/* We only show injury tracker once profile setup is done or if injuries exist */}
         {profile && (
