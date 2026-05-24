@@ -4,6 +4,7 @@ import React from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend, LineChart, Line } from 'recharts';
 import { useData } from '../lib/DataContext';
 import { format, subDays, parseISO } from 'date-fns';
+import { calculateSessionLoad } from '../lib/training-load';
 
 interface ChartProps {
   days: number;
@@ -79,7 +80,7 @@ export function LoadChart({ days }: ChartProps) {
     const dateStr = format(date, 'yyyy-MM-dd');
     
     const logs = trainingLogs.filter(l => l.date === dateStr);
-    const load = logs.reduce((sum, l) => sum + (l.duration * l.intensity), 0);
+    const load = logs.reduce((sum, l) => sum + calculateSessionLoad(l), 0);
     
     return {
       name: format(date, 'MMM d'),

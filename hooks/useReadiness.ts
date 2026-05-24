@@ -24,7 +24,7 @@ export function useReadiness(): ComprehensiveReadiness {
     const readinessResult = calculateReadiness(
       todayLog,
       historicalLogs,
-      load.acuteChronicRatio,
+      load.loadScore,
       load.hasAcuteData,
       load.hasChronicData
     );

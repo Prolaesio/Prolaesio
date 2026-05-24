@@ -1,14 +1,17 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
 import { Shield, Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, ArrowRight, User, ClipboardList } from 'lucide-react';
+import { AppRole, getDefaultRouteForRole } from '@/lib/routeRoles';
 
 interface AuthGateProps {
   children: React.ReactNode;
+  requiredRole?: AppRole;
 }
 
-export function AuthGate({ children }: AuthGateProps) {
+export function AuthGate({ children, requiredRole }: AuthGateProps) {
   const { user, userRole, isLoading, signOut } = useAuth();
 
   if (isLoading) {
@@ -27,7 +30,10 @@ export function AuthGate({ children }: AuthGateProps) {
     return <AuthScreen />;
   }
 
-  if (userRole === 'coach') {
+  if (requiredRole && userRole !== requiredRole) {
+    const fallbackRoute = getDefaultRouteForRole(userRole);
+    const roleLabel = requiredRole === 'coach' ? 'coach' : 'player';
+
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--background)] px-4">
         <div className="w-full max-w-sm">
@@ -35,13 +41,19 @@ export function AuthGate({ children }: AuthGateProps) {
             <div className="w-16 h-16 rounded-full bg-[rgba(0,212,170,0.15)] flex items-center justify-center mx-auto mb-4">
               <Shield className="text-[var(--accent-primary)]" size={32} />
             </div>
-            <h2 className="text-xl font-bold text-white mb-2">Coach Dashboard</h2>
+            <h2 className="text-xl font-bold text-white mb-2">Route Access</h2>
             <p className="text-sm text-gray-400 mb-6 leading-relaxed">
-              Coach tools are coming soon.
+              This section is for {roleLabel} accounts.
             </p>
+            <Link
+              href={fallbackRoute}
+              className="w-full py-3 rounded-xl text-sm font-bold text-black bg-gradient-to-r from-[var(--accent-primary)] to-emerald-500 inline-flex items-center justify-center"
+            >
+              Go to your workspace
+            </Link>
             <button
               onClick={signOut}
-              className="w-full py-3 rounded-xl text-sm font-bold text-[var(--accent-primary)] border border-[var(--accent-primary)] hover:bg-[rgba(0,212,170,0.1)] transition-colors"
+              className="w-full mt-3 py-3 rounded-xl text-sm font-bold text-[var(--accent-primary)] border border-[var(--accent-primary)] hover:bg-[rgba(0,212,170,0.1)] transition-colors"
             >
               Sign Out
             </button>

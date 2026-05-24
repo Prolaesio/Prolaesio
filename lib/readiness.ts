@@ -18,7 +18,7 @@ export interface ReadinessResult {
 export function calculateReadiness(
   todayLog: WellnessLog | undefined,
   historicalLogs: WellnessLog[],
-  acuteLoadRatio: number, // From training-load.ts
+  trainingLoadScore: number, // From training-load.ts
   hasAcuteData: boolean,
   hasChronicData: boolean
 ): ReadinessResult {
@@ -124,25 +124,13 @@ export function calculateReadiness(
   // 7. Load Score
   let loadScore = 100;
   if (loadStage === 'none') {
-    // No load data — score is irrelevant since weight is 0, but set to 0 for display
+    // No load data: score is irrelevant since weight is 0, but set to 0 for display.
     loadScore = 0;
   } else if (loadStage === 'acute-only') {
-    // Stage 2: Only acute load available, no chronic baseline for ratio
-    // Use acute load magnitude as a simple indicator
-    // Without chronic data, we can't compute a meaningful ratio,
-    // so we use the acuteLoadRatio cautiously (it defaults to 1.0 when chronicWeeklyAvg is 0)
-    // Apply a simplified scoring: just check if acute load seems reasonable
-    if (acuteLoadRatio > 1.5) loadScore = 20;
-    else if (acuteLoadRatio >= 0.8 && acuteLoadRatio <= 1.3) loadScore = 100;
-    else if (acuteLoadRatio < 0.8) loadScore = 85;
-    else loadScore = 60; // 1.3 - 1.5
+    // Acute-only data is useful, but less trustworthy without a chronic baseline.
+    loadScore = Math.round(trainingLoadScore * 0.75 + 20);
   } else {
-    // Stage 3: Full calculation — exactly as the original design
-    // acuteLoadRatio > 1.5 is a spike (0 points), < 0.8 is undertraining (70 points), 1.0 is optimal (100 points)
-    if (acuteLoadRatio > 1.5) loadScore = 0;
-    else if (acuteLoadRatio >= 0.8 && acuteLoadRatio <= 1.3) loadScore = 100;
-    else if (acuteLoadRatio < 0.8) loadScore = 80;
-    else loadScore = 50; // 1.3 - 1.5
+    loadScore = trainingLoadScore;
   }
 
   let rawScore =
