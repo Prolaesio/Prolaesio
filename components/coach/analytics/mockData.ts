@@ -75,6 +75,12 @@ export const comparisonMetricDefinitions: ComparisonMetricDefinition[] = [
   },
 ];
 
+interface BuildTeamAnalyticsDataFromPlayersParams {
+  teamId: string;
+  players: TeamPlayerDataset[];
+  teamAveragesMetrics: TeamAnalyticsDataset['teamAveragesMetrics'];
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
@@ -201,12 +207,13 @@ function buildIndividualsByLabel(players: TeamPlayerDataset[]) {
   }, {});
 }
 
-export function getTeamAnalyticsData(teamId: string): TeamAnalyticsDataset {
-  const players = getTeamPlayers(teamId);
-
+export function buildTeamAnalyticsDataFromPlayers({
+  teamId,
+  players,
+  teamAveragesMetrics,
+}: BuildTeamAnalyticsDataFromPlayersParams): TeamAnalyticsDataset {
   const { labels, averages } = buildTeamAverageSeries(players);
   const individualsByLabel = buildIndividualsByLabel(players);
-  const teamAveragesMetrics = getTeamCalendarData(teamId).averages;
 
   return {
     teamId,
@@ -216,4 +223,15 @@ export function getTeamAnalyticsData(teamId: string): TeamAnalyticsDataset {
     legendItems: analyticsLegendItems,
     individualsByLabel,
   };
+}
+
+export function getTeamAnalyticsData(teamId: string): TeamAnalyticsDataset {
+  const players = getTeamPlayers(teamId);
+  const teamAveragesMetrics = getTeamCalendarData(teamId).averages;
+
+  return buildTeamAnalyticsDataFromPlayers({
+    teamId,
+    players,
+    teamAveragesMetrics,
+  });
 }

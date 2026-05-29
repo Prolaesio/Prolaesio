@@ -14,8 +14,8 @@ import {
   Users,
 } from 'lucide-react';
 import { TeamCalendar } from '@/components/coach/calendar/TeamCalendar';
-import { getTeamCalendarData } from '@/components/coach/calendar/mockData';
 import type { TeamCalendarItem } from '@/components/coach/calendar/types';
+import { useCoachAllTeamsCalendarItems, useCoachTeamProfileAverages } from '@/lib/coach/teamInsights';
 import { useCoachTeam } from '@/lib/coach/selectedTeam';
 
 interface TeamStatusBadge {
@@ -27,9 +27,9 @@ interface TeamCardData {
   id: string;
   name: string;
   code: string;
-  players: number;
-  averageReadiness: number;
-  averageLoad: number;
+  players: number | null;
+  averageReadiness: number | null;
+  averageLoad: number | null;
   statusBadge: TeamStatusBadge;
 }
 
@@ -44,6 +44,11 @@ interface UpcomingActivity {
 const stableStatusBadge: TeamStatusBadge = {
   label: 'No Data',
   className: 'border-[rgba(255,255,255,0.22)] bg-[rgba(255,255,255,0.08)] text-gray-200',
+};
+
+const liveStatusBadge: TeamStatusBadge = {
+  label: 'Live',
+  className: 'border-[rgba(0,212,170,0.35)] bg-[rgba(0,212,170,0.12)] text-[var(--accent-primary)]',
 };
 
 const quickActions = [
@@ -81,48 +86,55 @@ const quickActions = [
 
 export function CoachDashboardPage() {
   const { teams, selectedTeam, selectedTeamId, setSelectedTeamId } = useCoachTeam();
+  const teamIds = useMemo(() => teams.map((team) => team.id), [teams]);
+  const { averagesByTeamId: profileAveragesByTeamId, isLoading: isLoadingPlayerCounts, error: playerCountError } = useCoachTeamProfileAverages(teamIds);
+  const { items: allTeamsCalendarItems, isLoading: isLoadingCalendarItems, error: calendarItemsError } = useCoachAllTeamsCalendarItems(teams);
 
   const teamCards = useMemo<TeamCardData[]>(() => {
     return teams.map((team) => ({
       ...team,
-      players: 0,
-      averageReadiness: 0,
-      averageLoad: 0,
-      statusBadge: stableStatusBadge,
+      players: Object.prototype.hasOwnProperty.call(profileAveragesByTeamId, team.id)
+        ? profileAveragesByTeamId[team.id]?.players ?? 0
+        : null,
+      averageReadiness: profileAveragesByTeamId[team.id]?.averageReadiness ?? null,
+      averageLoad: profileAveragesByTeamId[team.id]?.averageLoad ?? null,
+      statusBadge:
+        profileAveragesByTeamId[team.id]?.averageReadiness != null || profileAveragesByTeamId[team.id]?.averageLoad != null
+          ? liveStatusBadge
+          : stableStatusBadge,
     }));
-  }, [teams]);
+  }, [teams, profileAveragesByTeamId]);
 
   const todaySummary = useMemo(() => {
-    const totalPlayers = teamCards.reduce((sum, team) => sum + team.players, 0);
+    const totalPlayers = teamCards.reduce((sum, team) => sum + (team.players ?? 0), 0);
+    const hasUnknownPlayerCounts = teamCards.some((team) => team.players === null);
+    const readinessValues = teamCards
+      .map((team) => team.averageReadiness)
+      .filter((value): value is number => value != null && Number.isFinite(value));
+    const loadValues = teamCards
+      .map((team) => team.averageLoad)
+      .filter((value): value is number => value != null && Number.isFinite(value));
+    const averageReadiness =
+      readinessValues.length > 0
+        ? readinessValues.reduce((sum, value) => sum + value, 0) / readinessValues.length
+        : null;
+    const averageLoad =
+      loadValues.length > 0
+        ? loadValues.reduce((sum, value) => sum + value, 0) / loadValues.length
+        : null;
 
     return {
       totalTeams: teamCards.length,
       totalPlayers,
+      hasUnknownPlayerCounts,
+      averageReadiness,
+      averageLoad,
       attentionCount: 0,
     };
   }, [teamCards]);
 
   const teamNameById = useMemo(() => {
     return new Map(teams.map((team) => [team.id, team.name]));
-  }, [teams]);
-
-  const allTeamsCalendarItems = useMemo(() => {
-    const mergedItems: TeamCalendarItem[] = teams.flatMap((team) => {
-      const teamData = getTeamCalendarData(team.id);
-
-      return teamData.items.map((item) => ({
-        ...item,
-        title: `${team.name} - ${item.title}`,
-      }));
-    });
-
-    mergedItems.sort((first, second) => {
-      const firstDateTime = new Date(`${first.date}T${first.startTime}:00`).getTime();
-      const secondDateTime = new Date(`${second.date}T${second.startTime}:00`).getTime();
-      return firstDateTime - secondDateTime;
-    });
-
-    return mergedItems;
   }, [teams]);
 
   const upcomingActivities = useMemo<UpcomingActivity[]>(() => {
@@ -147,15 +159,26 @@ export function CoachDashboardPage() {
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-white">Welcome back, Coach.</h1>
             <p className="mt-2 text-sm text-gray-400">
               {todaySummary.totalTeams > 0
-                ? 'No readiness, load, or recovery data has been logged yet for your teams.'
+                ? (todaySummary.averageReadiness == null && todaySummary.averageLoad == null
+                    ? 'No readiness or load logs have been recorded for your teams yet.'
+                    : 'Team readiness and load metrics are connected from real player logs.')
                 : 'Create your first team to start your coach workspace.'}
             </p>
+            {isLoadingPlayerCounts ? <p className="mt-2 text-xs text-gray-400">Loading team player totals...</p> : null}
+            {playerCountError ? <p className="mt-2 text-xs text-[var(--status-red)]">Unable to load player totals: {playerCountError}</p> : null}
+            {calendarItemsError ? <p className="mt-2 text-xs text-[var(--status-red)]">Unable to load team calendar: {calendarItemsError}</p> : null}
             <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
               <span className="rounded-full border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.05)] px-2.5 py-1 font-medium text-gray-300">
                 {todaySummary.totalTeams} teams
               </span>
               <span className="rounded-full border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.05)] px-2.5 py-1 font-medium text-gray-300">
-                {todaySummary.totalPlayers} players
+                {todaySummary.hasUnknownPlayerCounts ? 'Loading players...' : `${todaySummary.totalPlayers} players`}
+              </span>
+              <span className="rounded-full border border-[rgba(0,212,170,0.3)] bg-[rgba(0,212,170,0.1)] px-2.5 py-1 font-medium text-[var(--accent-primary)]">
+                Avg readiness {todaySummary.averageReadiness == null ? '--' : `${Math.round(todaySummary.averageReadiness)}%`}
+              </span>
+              <span className="rounded-full border border-[rgba(74,158,255,0.35)] bg-[rgba(74,158,255,0.12)] px-2.5 py-1 font-medium text-[var(--accent-secondary)]">
+                Avg load {todaySummary.averageLoad == null ? '--' : Math.round(todaySummary.averageLoad)}
               </span>
               <span className="rounded-full border border-[rgba(0,212,170,0.28)] bg-[rgba(0,212,170,0.1)] px-2.5 py-1 font-medium text-[var(--accent-primary)]">
                 Selected team: {selectedTeam.name}
@@ -208,15 +231,19 @@ export function CoachDashboardPage() {
                 <dl className="space-y-1.5 text-xs">
                   <div className="flex items-center justify-between gap-2">
                     <dt className="text-gray-300">Players</dt>
-                    <dd className="font-semibold text-white">{team.players}</dd>
+                    <dd className="font-semibold text-white">{team.players ?? '--'}</dd>
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <dt className="text-gray-300">Avg readiness</dt>
-                    <dd className="font-semibold text-[var(--accent-primary)]">--</dd>
+                    <dd className="font-semibold text-[var(--accent-primary)]">
+                      {team.averageReadiness == null ? '--' : `${Math.round(team.averageReadiness)}%`}
+                    </dd>
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <dt className="text-gray-300">Avg load</dt>
-                    <dd className="font-semibold text-[var(--accent-secondary)]">--</dd>
+                    <dd className="font-semibold text-[var(--accent-secondary)]">
+                      {team.averageLoad == null ? '--' : Math.round(team.averageLoad)}
+                    </dd>
                   </div>
                 </dl>
 
@@ -261,6 +288,7 @@ export function CoachDashboardPage() {
           </div>
 
           <TeamCalendar items={allTeamsCalendarItems} className="min-h-[560px] xl:h-[760px]" />
+          {isLoadingCalendarItems ? <p className="text-xs text-gray-400">Loading cross-team calendar...</p> : null}
         </section>
 
         <section className="glass-card p-4 sm:p-5">

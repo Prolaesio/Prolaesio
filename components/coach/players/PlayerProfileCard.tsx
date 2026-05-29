@@ -11,6 +11,10 @@ function getInitials(name: string) {
 }
 
 export function PlayerProfileCard({ player, teamName }: PlayerProfileCardProps) {
+  const ageLabel = player.age > 0 ? `${player.age}` : '--';
+  const heightLabel = player.heightCm > 0 ? `${player.heightCm} cm` : '--';
+  const weightLabel = player.weightKg > 0 ? `${player.weightKg} kg` : '--';
+
   return (
     <aside className="glass-card h-fit p-5 sm:p-6">
       <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Selected Player</p>
@@ -40,19 +44,19 @@ export function PlayerProfileCard({ player, teamName }: PlayerProfileCardProps) 
         <div className="flex items-center justify-between gap-3 text-sm">
           <dt className="text-gray-300">Age</dt>
           <dd className="rounded-md border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.05)] px-2 py-0.5 text-xs font-semibold text-white">
-            {player.age}
+            {ageLabel}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-3 text-sm">
           <dt className="text-gray-300">Height</dt>
           <dd className="rounded-md border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.05)] px-2 py-0.5 text-xs font-semibold text-white">
-            {player.heightCm} cm
+            {heightLabel}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-3 text-sm">
           <dt className="text-gray-300">Weight</dt>
           <dd className="rounded-md border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.05)] px-2 py-0.5 text-xs font-semibold text-white">
-            {player.weightKg} kg
+            {weightLabel}
           </dd>
         </div>
       </dl>

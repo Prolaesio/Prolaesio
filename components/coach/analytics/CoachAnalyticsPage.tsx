@@ -3,14 +3,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnalyticsLegend } from '@/components/coach/analytics/AnalyticsLegend';
 import { AnalyticsViewToggle } from '@/components/coach/analytics/AnalyticsViewToggle';
-import { comparisonMetricDefinitions, getTeamAnalyticsData } from '@/components/coach/analytics/mockData';
+import { comparisonMetricDefinitions } from '@/components/coach/analytics/mockData';
 import { IndividualPlayerAnalyticsCard } from '@/components/coach/analytics/IndividualPlayerAnalyticsCard';
 import { MetricsGrid } from '@/components/coach/analytics/MetricsGrid';
 import { PlayerComparisonChart } from '@/components/coach/analytics/PlayerComparisonChart';
 import { TeamAnalyticsChart } from '@/components/coach/analytics/TeamAnalyticsChart';
 import { TeamAveragesPanel } from '@/components/coach/analytics/TeamAveragesPanel';
-import type { AnalyticsViewMode, ComparisonMetricKey, TeamPlayerComparisonPoint } from '@/components/coach/analytics/types';
+import type { AnalyticsViewMode, ComparisonMetricKey, TeamAnalyticsDataset, TeamPlayerComparisonPoint } from '@/components/coach/analytics/types';
 import { useCoachTeam } from '@/lib/coach/selectedTeam';
+import { useCoachSelectedTeamInsights } from '@/lib/coach/teamInsights';
 
 function AveragesView({
   legendItems,
@@ -18,8 +19,8 @@ function AveragesView({
   averages,
 }: {
   legendItems: string[];
-  teamAveragesMetrics: ReturnType<typeof getTeamAnalyticsData>['teamAveragesMetrics'];
-  averages: ReturnType<typeof getTeamAnalyticsData>['averages'];
+  teamAveragesMetrics: TeamAnalyticsDataset['teamAveragesMetrics'];
+  averages: TeamAnalyticsDataset['averages'];
 }) {
   const latestSleepPoint = averages.sleepQualityAndTiming[averages.sleepQualityAndTiming.length - 1];
   const sleepTimingNote = latestSleepPoint
@@ -228,8 +229,7 @@ function IndividualsView({
 export function CoachAnalyticsPage() {
   const { selectedTeam } = useCoachTeam();
   const [viewMode, setViewMode] = useState<AnalyticsViewMode>('averages');
-
-  const teamAnalytics = useMemo(() => getTeamAnalyticsData(selectedTeam.id), [selectedTeam.id]);
+  const { analyticsData: teamAnalytics, isLoading, error } = useCoachSelectedTeamInsights(selectedTeam.id);
   const hasAnalyticsData = teamAnalytics.labels.length > 0;
   const [selectedDayLabel, setSelectedDayLabel] = useState<string>('');
 
@@ -243,6 +243,17 @@ export function CoachAnalyticsPage() {
     return teamAnalytics.individualsByLabel[selectedDayLabel] ?? [];
   }, [selectedDayLabel, teamAnalytics.individualsByLabel]);
 
+  if (!selectedTeam.id) {
+    return (
+      <div className="mx-auto w-full max-w-7xl space-y-6">
+        <header>
+          <h1 className="text-2xl font-bold tracking-tight text-white">Analytics</h1>
+          <p className="mt-2 text-sm text-gray-400">Create or select a team first to view analytics.</p>
+        </header>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -252,6 +263,8 @@ export function CoachAnalyticsPage() {
             Analyze team-wide readiness trends and compare individuals for {selectedTeam.name}.
           </p>
           <p className="mt-3 text-xs font-medium text-[var(--accent-secondary)]">Selected team: {selectedTeam.name}</p>
+          {isLoading ? <p className="mt-2 text-xs text-gray-400">Loading team analytics data...</p> : null}
+          {error ? <p className="mt-2 text-xs text-[var(--status-red)]">Unable to load analytics data: {error}</p> : null}
         </div>
 
         <div className="flex items-center gap-3">
@@ -261,7 +274,9 @@ export function CoachAnalyticsPage() {
       </header>
 
       {viewMode === 'averages' ? (
-        hasAnalyticsData ? (
+        isLoading ? (
+          <section className="glass-card p-6 text-sm text-gray-300">Loading analytics data...</section>
+        ) : hasAnalyticsData ? (
           <AveragesView
             legendItems={teamAnalytics.legendItems}
             teamAveragesMetrics={teamAnalytics.teamAveragesMetrics}
@@ -270,6 +285,8 @@ export function CoachAnalyticsPage() {
         ) : (
           <section className="glass-card p-6 text-sm text-gray-300">No analytics data available for this team yet.</section>
         )
+      ) : isLoading ? (
+        <section className="glass-card p-6 text-sm text-gray-300">Loading individual player analytics...</section>
       ) : hasAnalyticsData ? (
         <IndividualsView
           labels={teamAnalytics.labels}

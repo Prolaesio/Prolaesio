@@ -3,11 +3,11 @@ import { SelectedTeamIndicator } from '@/components/coach/SelectedTeamIndicator'
 
 export interface TeamAverages {
   players: number;
-  averageAge: number;
-  averageHeightCm: number;
-  averageWeightKg: number;
-  averageReadiness: number;
-  averageLoad: number;
+  averageAge: number | null;
+  averageHeightCm: number | null;
+  averageWeightKg: number | null;
+  averageReadiness: number | null;
+  averageLoad: number | null;
 }
 
 interface TeamCardProps {
@@ -68,31 +68,31 @@ export function TeamCard({ team, averages, selected, onSelect }: TeamCardProps) 
         <div className="flex items-center justify-between gap-3 text-sm">
           <dt className="text-gray-300">Avg age</dt>
           <dd className="rounded-md border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.05)] px-2 py-0.5 text-xs font-semibold text-white">
-            {averages.averageAge.toFixed(1)}y
+            {averages.averageAge == null ? '--' : `${averages.averageAge.toFixed(1)}y`}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-3 text-sm">
           <dt className="text-gray-300">Avg height</dt>
           <dd className="rounded-md border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.05)] px-2 py-0.5 text-xs font-semibold text-white">
-            {averages.averageHeightCm.toFixed(0)} cm
+            {averages.averageHeightCm == null ? '--' : `${averages.averageHeightCm.toFixed(0)} cm`}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-3 text-sm">
           <dt className="text-gray-300">Avg weight</dt>
           <dd className="rounded-md border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.05)] px-2 py-0.5 text-xs font-semibold text-white">
-            {averages.averageWeightKg.toFixed(0)} kg
+            {averages.averageWeightKg == null ? '--' : `${averages.averageWeightKg.toFixed(0)} kg`}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-3 text-sm">
           <dt className="text-gray-300">Avg readiness</dt>
           <dd className="rounded-md border border-[rgba(0,212,170,0.3)] bg-[rgba(0,212,170,0.1)] px-2 py-0.5 text-xs font-semibold text-[var(--accent-primary)]">
-            {averages.averageReadiness.toFixed(0)}%
+            {averages.averageReadiness == null ? '--' : `${averages.averageReadiness.toFixed(0)}%`}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-3 text-sm">
           <dt className="text-gray-300">Avg load</dt>
           <dd className="rounded-md border border-[rgba(74,158,255,0.35)] bg-[rgba(74,158,255,0.12)] px-2 py-0.5 text-xs font-semibold text-[var(--accent-secondary)]">
-            {averages.averageLoad.toFixed(0)}
+            {averages.averageLoad == null ? '--' : averages.averageLoad.toFixed(0)}
           </dd>
         </div>
       </dl>

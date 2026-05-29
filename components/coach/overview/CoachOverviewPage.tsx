@@ -1,11 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo } from 'react';
 import { format, parseISO } from 'date-fns';
 import { ArrowUpRight, CalendarPlus, CalendarRange, ChevronRight, ClipboardList, LineChart } from 'lucide-react';
 import { useCoachTeam } from '@/lib/coach/selectedTeam';
-import { getTeamOverviewData, type OverviewTrend } from '@/components/coach/overview/mockData';
+import { useCoachSelectedTeamInsights } from '@/lib/coach/teamInsights';
+import type { OverviewTrend } from '@/components/coach/overview/mockData';
 
 interface SparklineProps {
   points: number[];
@@ -93,7 +93,18 @@ const quickActions = [
 
 export function CoachOverviewPage() {
   const { selectedTeam } = useCoachTeam();
-  const overviewData = useMemo(() => getTeamOverviewData(selectedTeam.id), [selectedTeam.id]);
+  const { overviewData, isLoading, error } = useCoachSelectedTeamInsights(selectedTeam.id);
+
+  if (!selectedTeam.id) {
+    return (
+      <div className="mx-auto w-full max-w-7xl space-y-6">
+        <header className="glass-card p-5 sm:p-6">
+          <h1 className="text-2xl font-bold tracking-tight text-white">Overview</h1>
+          <p className="mt-2 text-sm text-gray-400">Create or select a team first to view overview data.</p>
+        </header>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
@@ -104,6 +115,8 @@ export function CoachOverviewPage() {
             <p className="mt-2 text-sm text-gray-400">
               Team control room for {selectedTeam.name}. Quick status, risk signals, and next activities.
             </p>
+            {isLoading ? <p className="mt-2 text-xs text-gray-400">Loading team overview data...</p> : null}
+            {error ? <p className="mt-2 text-xs text-[var(--status-red)]">Unable to load overview data: {error}</p> : null}
             <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
               <span className="rounded-full border border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.05)] px-2.5 py-1 font-semibold uppercase tracking-wide text-gray-200">
                 {selectedTeam.code}
@@ -112,10 +125,10 @@ export function CoachOverviewPage() {
                 {overviewData.summary.playerCount} players
               </span>
               <span className="rounded-full border border-[rgba(0,212,170,0.3)] bg-[rgba(0,212,170,0.1)] px-2.5 py-1 font-medium text-[var(--accent-primary)]">
-                Avg readiness {overviewData.summary.averageReadiness}
+                Avg readiness {overviewData.summary.averageReadiness == null ? '--' : `${overviewData.summary.averageReadiness}%`}
               </span>
               <span className="rounded-full border border-[rgba(74,158,255,0.35)] bg-[rgba(74,158,255,0.12)] px-2.5 py-1 font-medium text-[var(--accent-secondary)]">
-                Avg load {overviewData.summary.averageLoad}
+                Avg load {overviewData.summary.averageLoad == null ? '--' : overviewData.summary.averageLoad}
               </span>
             </div>
           </div>
@@ -137,7 +150,7 @@ export function CoachOverviewPage() {
             {overviewData.keyMetrics.map((metric) => (
               <article key={metric.label} className="glass-card p-3.5">
                 <p className="text-[10px] uppercase tracking-wide text-gray-400">{metric.label}</p>
-                <p className={`mt-1.5 text-xl font-bold ${metric.toneClass}`}>{metric.value}</p>
+                <p className={`mt-1.5 text-xl font-bold ${metric.toneClass}`}>{metric.value == null ? '--' : metric.value}</p>
               </article>
             ))}
           </div>

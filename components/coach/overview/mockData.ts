@@ -1,6 +1,9 @@
 import { getTeamAnalyticsData } from '@/components/coach/analytics/mockData';
 import { getTeamCalendarData } from '@/components/coach/calendar/mockData';
 import { getTeamPlayers } from '@/components/coach/players/mockData';
+import type { TeamAnalyticsDataset } from '@/components/coach/analytics/types';
+import type { TeamCalendarDataset } from '@/components/coach/calendar/types';
+import type { TeamPlayerDataset } from '@/components/coach/players/types';
 
 export interface OverviewSummaryStatus {
   label: 'Stable' | 'High Load' | 'Needs Attention';
@@ -9,14 +12,14 @@ export interface OverviewSummaryStatus {
 
 export interface OverviewTeamSummary {
   playerCount: number;
-  averageReadiness: number;
-  averageLoad: number;
+  averageReadiness: number | null;
+  averageLoad: number | null;
   status: OverviewSummaryStatus;
 }
 
 export interface OverviewMetric {
   label: string;
-  value: number;
+  value: number | null;
   toneClass: string;
 }
 
@@ -80,7 +83,7 @@ function getSummaryStatus({
   loadScore,
   hasData,
 }: {
-  averageReadiness: number;
+  averageReadiness: number | null;
   fatigue: number;
   stress: number;
   loadScore: number;
@@ -93,7 +96,7 @@ function getSummaryStatus({
     };
   }
 
-  if (averageReadiness < 78 || stress >= 58 || fatigue >= 7.2) {
+  if (averageReadiness != null && (averageReadiness < 78 || stress >= 58 || fatigue >= 7.2)) {
     return {
       label: 'Needs Attention',
       className: 'text-[var(--status-red)] border-[rgba(255,107,107,0.4)] bg-[rgba(255,107,107,0.12)]',
@@ -181,15 +184,22 @@ function buildAttentionIssue({
   };
 }
 
-function parseMetricNumber(value: string) {
+function parseMetricNumber(value: string): number | null {
   const numeric = Number.parseFloat(value.replace(/[^\d.]/g, ''));
-  return Number.isFinite(numeric) ? numeric : 0;
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
-export function getTeamOverviewData(teamId: string): TeamOverviewData {
-  const analyticsData = getTeamAnalyticsData(teamId);
-  const calendarData = getTeamCalendarData(teamId);
-  const players = getTeamPlayers(teamId);
+interface BuildTeamOverviewDataParams {
+  analyticsData: TeamAnalyticsDataset;
+  calendarData: TeamCalendarDataset;
+  players: TeamPlayerDataset[];
+}
+
+export function buildTeamOverviewData({
+  analyticsData,
+  calendarData,
+  players,
+}: BuildTeamOverviewDataParams): TeamOverviewData {
   const hasAnalyticsData = analyticsData.labels.length > 0;
   const hasPlayerData = players.length > 0;
   const hasCalendarData = calendarData.items.length > 0 || calendarData.averages.length > 0;
@@ -202,52 +212,64 @@ export function getTeamOverviewData(teamId: string): TeamOverviewData {
   const latestMultiFactor = analyticsData.averages.multiFactorReadiness[analyticsData.averages.multiFactorReadiness.length - 1];
   const averageLoadMetric = calendarData.averages.find((metric) => metric.label === 'Acute Training Load');
 
-  const averageReadiness = rounded(latestReadiness?.readinessScore ?? 0);
-  const averageLoad = rounded(parseMetricNumber(averageLoadMetric?.value ?? `${latestEnergyFatigueLoad?.acuteTrainingLoad ?? 0}`));
+  const averageReadiness = latestReadiness ? rounded(latestReadiness.readinessScore) : null;
+  const averageLoad = averageLoadMetric
+    ? (() => {
+        const parsed = parseMetricNumber(averageLoadMetric.value);
+        return parsed == null ? null : rounded(parsed);
+      })()
+    : latestEnergyFatigueLoad
+      ? rounded(latestEnergyFatigueLoad.acuteTrainingLoad)
+      : null;
+  const hasSignalData = Boolean(latestReadiness || latestEnergyFatigueLoad || latestSleep || latestStressSleep || latestMultiFactor);
 
   const summaryStatus = getSummaryStatus({
     averageReadiness,
     fatigue: latestEnergyFatigueLoad?.fatigue ?? 0,
     stress: latestStressSleep?.stress ?? 0,
     loadScore: latestMultiFactor?.loadScore ?? 0,
-    hasData,
+    hasData: hasData && hasSignalData,
   });
 
-  const keyMetrics: OverviewMetric[] = hasData ? [
+  const keyMetrics: OverviewMetric[] = hasAnalyticsData ? [
     {
       label: 'Readiness Score',
-      value: rounded(latestReadiness?.readinessScore ?? 0),
+      value: latestReadiness ? rounded(latestReadiness.readinessScore) : null,
       toneClass: 'text-[var(--accent-primary)]',
     },
     {
       label: 'Fatigue',
-      value: toRange100From10(latestEnergyFatigueLoad?.fatigue ?? 0),
+      value: latestEnergyFatigueLoad ? toRange100From10(latestEnergyFatigueLoad.fatigue) : null,
       toneClass: 'text-[var(--status-red)]',
     },
     {
       label: 'Load Score',
-      value: rounded(latestMultiFactor?.loadScore ?? 0),
+      value: latestMultiFactor ? rounded(latestMultiFactor.loadScore) : null,
       toneClass: 'text-[var(--accent-secondary)]',
     },
     {
       label: 'Sleep Score',
-      value: rounded(latestSleep?.sleepScore ?? 0),
+      value: latestSleep ? rounded(latestSleep.sleepScore) : null,
       toneClass: 'text-[var(--status-yellow)]',
     },
     {
       label: 'Stress',
-      value: rounded(latestStressSleep?.stress ?? 0),
+      value: latestStressSleep ? rounded(latestStressSleep.stress) : null,
       toneClass: 'text-[var(--status-orange)]',
     },
     {
       label: 'Energy',
-      value: toRange100From10(latestEnergyFatigueLoad?.energy ?? 0),
+      value: latestEnergyFatigueLoad ? toRange100From10(latestEnergyFatigueLoad.energy) : null,
       toneClass: 'text-white',
     },
   ] : [];
 
   const playersNeedingAttention = players
     .map((dataset) => {
+      if (dataset.analytics.readinessTrend.length === 0 || dataset.analytics.energyFatigueLoad.length === 0) {
+        return null;
+      }
+
       const readiness = dataset.analytics.readinessTrend[dataset.analytics.readinessTrend.length - 1]?.readinessScore ?? 0;
       const fatigue = dataset.analytics.energyFatigueLoad[dataset.analytics.energyFatigueLoad.length - 1]?.fatigue ?? 0;
       const sleepScore = dataset.analytics.sleepQualityAndTiming[dataset.analytics.sleepQualityAndTiming.length - 1]?.sleepScore ?? 0;
@@ -295,7 +317,7 @@ export function getTeamOverviewData(teamId: string): TeamOverviewData {
   const loadTrendPoints = analyticsData.averages.energyFatigueLoad.map((point) => point.acuteTrainingLoad);
   const fatigueTrendPoints = analyticsData.averages.energyFatigueLoad.map((point) => toRange100From10(point.fatigue));
 
-  const trends: OverviewTrend[] = hasData ? [
+  const trends: OverviewTrend[] = hasAnalyticsData ? [
     {
       label: 'Readiness Trend',
       points: readinessTrendPoints,
@@ -331,4 +353,16 @@ export function getTeamOverviewData(teamId: string): TeamOverviewData {
     upcomingActivities,
     trends,
   };
+}
+
+export function getTeamOverviewData(teamId: string): TeamOverviewData {
+  const analyticsData = getTeamAnalyticsData(teamId);
+  const calendarData = getTeamCalendarData(teamId);
+  const players = getTeamPlayers(teamId);
+
+  return buildTeamOverviewData({
+    analyticsData,
+    calendarData,
+    players,
+  });
 }

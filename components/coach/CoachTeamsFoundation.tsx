@@ -4,14 +4,15 @@ import { FormEvent, useMemo, useState } from 'react';
 import { useCoachTeam } from '@/lib/coach/selectedTeam';
 import { TeamGrid } from '@/components/coach/TeamGrid';
 import type { TeamAverages } from '@/components/coach/TeamCard';
+import { useCoachTeamProfileAverages } from '@/lib/coach/teamInsights';
 
 const defaultTeamAverages: TeamAverages = {
   players: 0,
-  averageAge: 0,
-  averageHeightCm: 0,
-  averageWeightKg: 0,
-  averageReadiness: 0,
-  averageLoad: 0,
+  averageAge: null,
+  averageHeightCm: null,
+  averageWeightKg: null,
+  averageReadiness: null,
+  averageLoad: null,
 };
 
 function generateInviteCodeSeed(teamName: string): string {
@@ -43,13 +44,24 @@ export function CoachTeamsFoundation() {
   const [newTeamCode, setNewTeamCode] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
   const [isCreatingTeam, setIsCreatingTeam] = useState(false);
+  const teamIds = useMemo(() => teams.map((team) => team.id), [teams]);
+  const { averagesByTeamId: profileAveragesByTeamId, error: profileAveragesError } = useCoachTeamProfileAverages(teamIds);
 
   const averagesByTeamId = useMemo(() => {
     return teams.reduce<Record<string, TeamAverages>>((accumulator, team) => {
-      accumulator[team.id] = defaultTeamAverages;
+      const profileAverages = profileAveragesByTeamId[team.id];
+      accumulator[team.id] = {
+        ...defaultTeamAverages,
+        players: profileAverages?.players ?? 0,
+        averageAge: profileAverages?.averageAge ?? null,
+        averageHeightCm: profileAverages?.averageHeightCm ?? null,
+        averageWeightKg: profileAverages?.averageWeightKg ?? null,
+        averageReadiness: profileAverages?.averageReadiness ?? null,
+        averageLoad: profileAverages?.averageLoad ?? null,
+      };
       return accumulator;
     }, {});
-  }, [teams]);
+  }, [teams, profileAveragesByTeamId]);
 
   const handleCreateTeam = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -124,6 +136,9 @@ export function CoachTeamsFoundation() {
         {createError ? <p className="mt-2 text-xs text-[var(--status-red)]">{createError}</p> : null}
         {teamsError ? (
           <p className="mt-2 text-xs text-[var(--status-red)]">Unable to load real teams: {teamsError}</p>
+        ) : null}
+        {profileAveragesError ? (
+          <p className="mt-2 text-xs text-[var(--status-red)]">Unable to load team profile averages: {profileAveragesError}</p>
         ) : null}
       </section>
 

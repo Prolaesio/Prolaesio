@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { useData } from '../lib/DataContext';
 import { UserProfile, Position, Priority } from '../lib/types';
-import { Save } from 'lucide-react';
+import { Loader2, Save } from 'lucide-react';
 import { differenceInYears, parseISO } from 'date-fns';
+import { joinTeamByCode } from '@/lib/teamMembership';
 
 export function ProfileForm() {
   const { profile, saveProfile } = useData();
@@ -16,6 +17,8 @@ export function ProfileForm() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [priorities, setPriorities] = useState<Priority[]>([]);
   const [error, setError] = useState<string>('');
+  const [teamJoinFeedback, setTeamJoinFeedback] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [joiningTeam, setJoiningTeam] = useState(false);
 
   const availablePositions: Position[] = ['GK', 'CB', 'FB', 'CM', 'AM', 'W', 'ST'];
   const availablePriorities: Priority[] = [
@@ -97,6 +100,72 @@ export function ProfileForm() {
     alert('Profile saved successfully');
   };
 
+  const handleJoinTeam = async () => {
+    const enteredCode = teamCode.trim();
+    if (!enteredCode) {
+      setTeamJoinFeedback({ type: 'error', text: 'Please enter a team code.' });
+      return;
+    }
+
+    setJoiningTeam(true);
+    setTeamJoinFeedback(null);
+    try {
+      const result = await joinTeamByCode(enteredCode);
+
+      if (result.status === 'joined') {
+        const resolvedCode = result.inviteCode ?? enteredCode.toUpperCase();
+        setTeamCode(resolvedCode);
+        if (profile) {
+          saveProfile({
+            ...profile,
+            teamCode: resolvedCode,
+          });
+        }
+        setTeamJoinFeedback({
+          type: 'success',
+          text: result.message || 'Team joined successfully.',
+        });
+        return;
+      }
+
+      if (result.status === 'already_member') {
+        const resolvedCode = result.inviteCode ?? enteredCode.toUpperCase();
+        setTeamCode(resolvedCode);
+        if (profile) {
+          saveProfile({
+            ...profile,
+            teamCode: resolvedCode,
+          });
+        }
+        setTeamJoinFeedback({
+          type: 'info',
+          text: result.message || 'You are already in this team.',
+        });
+        return;
+      }
+
+      if (result.status === 'invalid_code') {
+        setTeamJoinFeedback({
+          type: 'error',
+          text: result.message || 'That team code does not match any team.',
+        });
+        return;
+      }
+
+      setTeamJoinFeedback({
+        type: 'error',
+        text: result.message || 'Unable to join this team right now.',
+      });
+    } catch {
+      setTeamJoinFeedback({
+        type: 'error',
+        text: 'Unable to join this team right now. Please try again.',
+      });
+    } finally {
+      setJoiningTeam(false);
+    }
+  };
+
   // Format DOB for display
   const formattedDOB = dateOfBirth
     ? parseISO(dateOfBirth).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
@@ -164,13 +233,41 @@ export function ProfileForm() {
         <label className="block text-xs font-medium text-gray-400 mb-2">
           Team / Coach Code <span className="text-gray-600">(optional)</span>
         </label>
-        <input
-          type="text"
-          value={teamCode}
-          onChange={(e) => setTeamCode(e.target.value)}
-          placeholder="Enter team code"
-          className="w-full bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg p-3 text-white text-sm touch-target"
-        />
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={teamCode}
+              onChange={(e) => {
+                setTeamCode(e.target.value.toUpperCase());
+                setTeamJoinFeedback(null);
+              }}
+              placeholder="Enter team code"
+              className="w-full bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg p-3 text-white text-sm touch-target"
+            />
+            <button
+              type="button"
+              onClick={() => void handleJoinTeam()}
+              disabled={joiningTeam || !teamCode.trim()}
+              className="rounded-lg border border-[rgba(74,158,255,0.45)] bg-[rgba(74,158,255,0.14)] px-3 py-2 text-xs font-semibold text-[var(--accent-secondary)] transition-colors hover:bg-[rgba(74,158,255,0.2)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {joiningTeam ? <Loader2 className="animate-spin" size={14} /> : 'Join Team'}
+            </button>
+          </div>
+          {teamJoinFeedback ? (
+            <p
+              className={`text-[11px] ${
+                teamJoinFeedback.type === 'success'
+                  ? 'text-[var(--accent-primary)]'
+                  : teamJoinFeedback.type === 'info'
+                  ? 'text-[var(--accent-secondary)]'
+                  : 'text-[#ff6b6b]'
+              }`}
+            >
+              {teamJoinFeedback.text}
+            </p>
+          ) : null}
+        </div>
       </div>
 
       {error && (

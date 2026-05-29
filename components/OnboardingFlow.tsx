@@ -22,6 +22,7 @@ import {
   CalendarEvent,
 } from '@/lib/types';
 import { POSITION_OPTIONS } from '@/lib/onboarding';
+import { joinTeamByCode } from '@/lib/teamMembership';
 import { WeeklyAvailabilityGrid } from './WeeklyAvailabilityGrid';
 import { TrainingResourcePicker } from './TrainingResourcePicker';
 import { CalendarWeek } from './CalendarWeek';
@@ -82,6 +83,8 @@ export function OnboardingFlow() {
   const [teamCode, setTeamCode] = useState<string>(profile?.teamCode || '');
   const [teamConnected, setTeamConnected] = useState<boolean>(!!profile?.teamCode);
   const [teamSkipped, setTeamSkipped] = useState<boolean>(false);
+  const [isJoiningTeam, setIsJoiningTeam] = useState(false);
+  const [teamJoinFeedback, setTeamJoinFeedback] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [step1Error, setStep1Error] = useState<string>('');
   const [savingStep1, setSavingStep1] = useState(false);
 
@@ -173,16 +176,63 @@ export function OnboardingFlow() {
     }
   };
 
-  const handleConnectTeam = () => {
-    if (!teamCode.trim()) return;
-    setTeamConnected(true);
-    setTeamSkipped(false);
+  const handleConnectTeam = async () => {
+    const enteredCode = teamCode.trim();
+    if (!enteredCode) return;
+
+    setIsJoiningTeam(true);
+    setTeamJoinFeedback(null);
+    try {
+      const result = await joinTeamByCode(enteredCode);
+
+      if (result.status === 'joined') {
+        const resolvedCode = result.inviteCode ?? enteredCode.toUpperCase();
+        setTeamCode(resolvedCode);
+        setTeamConnected(true);
+        setTeamSkipped(false);
+        setTeamJoinFeedback({
+          type: 'success',
+          text: result.message || 'Team joined successfully.',
+        });
+        return;
+      }
+
+      if (result.status === 'already_member') {
+        const resolvedCode = result.inviteCode ?? enteredCode.toUpperCase();
+        setTeamCode(resolvedCode);
+        setTeamConnected(true);
+        setTeamSkipped(false);
+        setTeamJoinFeedback({
+          type: 'info',
+          text: result.message || 'You are already in this team.',
+        });
+        return;
+      }
+
+      setTeamConnected(false);
+      setTeamJoinFeedback({
+        type: 'error',
+        text:
+          result.status === 'invalid_code'
+            ? (result.message || 'That team code does not match any team.')
+            : (result.message || 'Unable to join this team right now.'),
+      });
+    } catch {
+      setTeamConnected(false);
+      setTeamJoinFeedback({
+        type: 'error',
+        text: 'Unable to join this team right now. Please try again.',
+      });
+    } finally {
+      setIsJoiningTeam(false);
+    }
   };
 
   const handleNoTeam = () => {
     setTeamConnected(false);
     setTeamSkipped(true);
     setTeamCode('');
+    setTeamJoinFeedback(null);
   };
 
   // ---- Step 2 handlers ----
@@ -370,7 +420,11 @@ export function OnboardingFlow() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => { setTeamConnected(false); setTeamSkipped(false); }}
+                        onClick={() => {
+                          setTeamConnected(false);
+                          setTeamSkipped(false);
+                          setTeamJoinFeedback(null);
+                        }}
                         className="text-[11px] text-gray-300 hover:text-white underline"
                       >
                         Change
@@ -381,18 +435,22 @@ export function OnboardingFlow() {
                       <input
                         type="text"
                         value={teamCode}
-                        onChange={(e) => { setTeamCode(e.target.value); setTeamSkipped(false); }}
+                        onChange={(e) => {
+                          setTeamCode(e.target.value.toUpperCase());
+                          setTeamSkipped(false);
+                          setTeamJoinFeedback(null);
+                        }}
                         placeholder="Enter team code"
                         className="w-full bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-xl p-3 text-white text-sm focus:border-[var(--accent-primary)] focus:outline-none mb-2 touch-target"
                       />
                       <div className="flex space-x-2">
                         <button
                           type="button"
-                          onClick={handleConnectTeam}
-                          disabled={!teamCode.trim()}
+                          onClick={() => void handleConnectTeam()}
+                          disabled={!teamCode.trim() || isJoiningTeam}
                           className="flex-1 py-2.5 rounded-xl text-xs font-bold bg-[var(--accent-secondary)] text-white shadow disabled:opacity-40 disabled:cursor-not-allowed transition-transform active:scale-95"
                         >
-                          Connect
+                          {isJoiningTeam ? 'Connecting...' : 'Connect'}
                         </button>
                         <button
                           type="button"
@@ -411,6 +469,19 @@ export function OnboardingFlow() {
                           You can add a team code later from your profile.
                         </p>
                       )}
+                      {teamJoinFeedback ? (
+                        <p
+                          className={`mt-2 text-[11px] ${
+                            teamJoinFeedback.type === 'success'
+                              ? 'text-[var(--accent-primary)]'
+                              : teamJoinFeedback.type === 'info'
+                              ? 'text-[var(--accent-secondary)]'
+                              : 'text-[#ff6b6b]'
+                          }`}
+                        >
+                          {teamJoinFeedback.text}
+                        </p>
+                      ) : null}
                     </>
                   )}
                 </div>

@@ -10,7 +10,7 @@ import { PlayerProfileCard } from '@/components/coach/players/PlayerProfileCard'
 import { PlayerSelectorDropdown } from '@/components/coach/players/PlayerSelectorDropdown';
 import { PlayerViewToggle } from '@/components/coach/players/PlayerViewToggle';
 import { WellnessMetricsPanel } from '@/components/coach/players/WellnessMetricsPanel';
-import { analyticsLegendItems, getTeamPlayers } from '@/components/coach/players/mockData';
+import { loadRealTeamPlayerDatasets } from '@/components/coach/players/realData';
 import type { PlayerViewMode, TeamPlayerDataset } from '@/components/coach/players/types';
 
 function AnalyticsView({ playerDataset }: { playerDataset: TeamPlayerDataset }) {
@@ -93,6 +93,14 @@ function AnalyticsView({ playerDataset }: { playerDataset: TeamPlayerDataset }) 
   );
 }
 
+const analyticsLegendItems = [
+  'Readiness trend',
+  'Energy vs fatigue vs acute load',
+  'Sleep timing and sleep quality',
+  'Stress vs sleep score',
+  'Multi-factor readiness inputs',
+];
+
 function CalendarView({ playerDataset }: { playerDataset: TeamPlayerDataset }) {
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] xl:items-stretch">
@@ -105,9 +113,45 @@ function CalendarView({ playerDataset }: { playerDataset: TeamPlayerDataset }) {
 export function PlayersPage() {
   const { selectedTeam } = useCoachTeam();
   const [viewMode, setViewMode] = useState<PlayerViewMode>('analytics');
-
-  const teamPlayers = useMemo(() => getTeamPlayers(selectedTeam.id), [selectedTeam.id]);
+  const [teamPlayers, setTeamPlayers] = useState<TeamPlayerDataset[]>([]);
+  const [isLoadingPlayers, setIsLoadingPlayers] = useState(false);
+  const [playersError, setPlayersError] = useState<string | null>(null);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>(() => teamPlayers[0]?.player.id ?? '');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadPlayers = async () => {
+      if (!selectedTeam.id) {
+        if (!isMounted) return;
+        setTeamPlayers([]);
+        setPlayersError(null);
+        setIsLoadingPlayers(false);
+        return;
+      }
+
+      setIsLoadingPlayers(true);
+      setPlayersError(null);
+      const { data, error } = await loadRealTeamPlayerDatasets(selectedTeam.id);
+      if (!isMounted) return;
+
+      if (error) {
+        setTeamPlayers([]);
+        setPlayersError(error);
+        setIsLoadingPlayers(false);
+        return;
+      }
+
+      setTeamPlayers(data);
+      setIsLoadingPlayers(false);
+    };
+
+    void loadPlayers();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedTeam.id]);
 
   useEffect(() => {
     const selectedPlayerStillExists = teamPlayers.some((dataset) => dataset.player.id === selectedPlayerId);
@@ -120,12 +164,45 @@ export function PlayersPage() {
     return teamPlayers.find((dataset) => dataset.player.id === selectedPlayerId) ?? teamPlayers[0];
   }, [selectedPlayerId, teamPlayers]);
 
+  if (!selectedTeam.id) {
+    return (
+      <div className="mx-auto w-full max-w-6xl">
+        <header className="mb-6">
+          <h1 className="text-2xl font-bold tracking-tight text-white">Players</h1>
+          <p className="mt-2 text-sm text-gray-400">Create or select a team first to view players.</p>
+        </header>
+      </div>
+    );
+  }
+
+  if (isLoadingPlayers) {
+    return (
+      <div className="mx-auto w-full max-w-6xl">
+        <header className="mb-6">
+          <h1 className="text-2xl font-bold tracking-tight text-white">Players</h1>
+          <p className="mt-2 text-sm text-gray-400">Loading players for {selectedTeam.name}...</p>
+        </header>
+      </div>
+    );
+  }
+
+  if (playersError) {
+    return (
+      <div className="mx-auto w-full max-w-6xl">
+        <header className="mb-6">
+          <h1 className="text-2xl font-bold tracking-tight text-white">Players</h1>
+          <p className="mt-2 text-sm text-[var(--status-red)]">{playersError}</p>
+        </header>
+      </div>
+    );
+  }
+
   if (!selectedPlayerDataset) {
     return (
       <div className="mx-auto w-full max-w-6xl">
         <header className="mb-6">
           <h1 className="text-2xl font-bold tracking-tight text-white">Players</h1>
-          <p className="mt-2 text-sm text-gray-400">No players are available for this team yet.</p>
+          <p className="mt-2 text-sm text-gray-400">No joined players are in {selectedTeam.name} yet.</p>
         </header>
       </div>
     );

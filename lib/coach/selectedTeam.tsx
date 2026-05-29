@@ -73,6 +73,7 @@ export function CoachTeamProvider({ children }: { children: React.ReactNode }) {
   const [isLoadingTeams, setIsLoadingTeams] = useState<boolean>(true);
   const [usingMockTeams, setUsingMockTeams] = useState<boolean>(false);
   const [teamsError, setTeamsError] = useState<string | null>(null);
+  const selectedTeamStorageKey = user ? `coach:selected-team:${user.id}` : '';
 
   const loadTeams = useCallback(async (preferredTeamId?: string) => {
     if (!user) {
@@ -170,8 +171,31 @@ export function CoachTeamProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   useEffect(() => {
-    void loadTeams();
-  }, [loadTeams]);
+    let preferredTeamId: string | undefined;
+
+    if (selectedTeamStorageKey) {
+      try {
+        const storedTeamId = window.localStorage.getItem(selectedTeamStorageKey);
+        if (storedTeamId) {
+          preferredTeamId = storedTeamId;
+        }
+      } catch (error) {
+        console.error('Unable to read stored coach selected team id:', error);
+      }
+    }
+
+    void loadTeams(preferredTeamId);
+  }, [loadTeams, selectedTeamStorageKey]);
+
+  useEffect(() => {
+    if (!selectedTeamStorageKey || !selectedTeamId) return;
+
+    try {
+      window.localStorage.setItem(selectedTeamStorageKey, selectedTeamId);
+    } catch (error) {
+      console.error('Unable to persist coach selected team id:', error);
+    }
+  }, [selectedTeamId, selectedTeamStorageKey]);
 
   const createTeam = useCallback(
     async ({ name, code }: { name: string; code?: string }) => {
