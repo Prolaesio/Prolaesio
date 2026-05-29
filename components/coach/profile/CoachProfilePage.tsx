@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { BadgeCheck, Mail, ShieldCheck, UserCircle2, Users } from 'lucide-react';
+import { BadgeCheck, LogOut, Mail, ShieldCheck, UserCircle2, Users } from 'lucide-react';
 import { useCoachTeam } from '@/lib/coach/selectedTeam';
 import { useAuth } from '@/lib/AuthContext';
 
@@ -28,7 +28,7 @@ function formatMemberSince(createdAt?: string): string {
 
 export function CoachProfilePage() {
   const { teams } = useCoachTeam();
-  const { user, userRole, updateDisplayName, updateEmail } = useAuth();
+  const { user, userRole, signOut, updateDisplayName, updateEmail } = useAuth();
 
   const accountEmail = user?.email ?? '';
   const accountName = resolveDisplayName(accountEmail, user?.user_metadata?.full_name);
@@ -44,6 +44,7 @@ export function CoachProfilePage() {
   const [fullNameInput, setFullNameInput] = useState(accountName);
   const [emailInput, setEmailInput] = useState(accountEmail);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
@@ -100,6 +101,11 @@ export function CoachProfilePage() {
 
     setSaveSuccess('Profile updated.');
     setIsSavingProfile(false);
+  };
+
+  const handleSignOut = async () => {
+    setIsSigningOut(true);
+    await signOut();
   };
 
   return (
@@ -248,6 +254,16 @@ export function CoachProfilePage() {
               <span>{accountName ? 'Account profile is active.' : 'Set a display name to complete profile basics.'}</span>
             </div>
           </section>
+
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={isSigningOut}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-[rgba(255,107,107,0.34)] bg-[rgba(255,107,107,0.09)] px-5 py-3.5 text-sm font-semibold text-[var(--status-red)] transition-colors hover:bg-[rgba(255,107,107,0.15)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <LogOut size={18} />
+            <span>{isSigningOut ? 'Logging out...' : 'Log Out'}</span>
+          </button>
         </div>
       </div>
     </div>
