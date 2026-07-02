@@ -1,5 +1,5 @@
 import { addDays, addWeeks, format, isSameDay, startOfWeek, subDays, subWeeks } from 'date-fns';
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, X } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 import type { PlayerCalendarEvent } from '@/components/coach/players/types';
 import { resolveCalendarOccurrence } from '@/lib/calendar/events';
@@ -9,6 +9,7 @@ interface PlayerCalendarProps {
   events: PlayerCalendarEvent[];
   eventTypeColors?: Record<string, string>;
   className?: string;
+  onEditEvent?: (occurrence: SelectedOccurrence) => void;
 }
 
 interface ParsedEvent extends PlayerCalendarEvent {
@@ -28,7 +29,7 @@ interface EventLayout {
   totalColumns: number;
 }
 
-interface SelectedOccurrence {
+export interface SelectedOccurrence {
   event: PlayerCalendarEvent;
   instanceDate: string;
   title: string;
@@ -191,25 +192,40 @@ function getRecurrenceLabel(event: PlayerCalendarEvent): string {
 function EventDetailsModal({
   occurrence,
   onClose,
+  onEdit,
 }: {
   occurrence: SelectedOccurrence;
   onClose: () => void;
+  onEdit?: (occurrence: SelectedOccurrence) => void;
 }) {
   const event = occurrence.event;
+  const canEdit = event.coachManaged === true;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-2xl border border-[rgba(255,255,255,0.1)] bg-[var(--background)] shadow-2xl">
         <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.08)] px-4 py-3">
           <h3 className="text-sm font-semibold text-white">Event Details</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full bg-[rgba(255,255,255,0.05)] p-1.5 text-gray-300 transition-colors hover:text-white"
-            aria-label="Close event details"
-          >
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-2">
+            {canEdit ? (
+              <button
+                type="button"
+                onClick={() => onEdit?.(occurrence)}
+                className="rounded-full bg-[rgba(255,255,255,0.05)] p-1.5 text-gray-300 transition-colors hover:text-white"
+                aria-label="Edit event"
+              >
+                <Pencil size={16} />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full bg-[rgba(255,255,255,0.05)] p-1.5 text-gray-300 transition-colors hover:text-white"
+              aria-label="Close event details"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         <div className="space-y-3 px-4 py-4 text-sm">
@@ -546,7 +562,7 @@ function WeekSchedule({
   );
 }
 
-export function PlayerCalendar({ events, eventTypeColors = {}, className }: PlayerCalendarProps) {
+export function PlayerCalendar({ events, eventTypeColors = {}, className, onEditEvent }: PlayerCalendarProps) {
   const [view, setView] = usePersistedState<'Day' | 'Week'>('lodario:coach-player-calendar:view', 'Week');
   const [currentDateKey, setCurrentDateKey] = usePersistedState('lodario:coach-player-calendar:date', format(new Date(), 'yyyy-MM-dd'));
   const currentDate = useMemo(() => new Date(`${currentDateKey}T00:00:00`), [currentDateKey]);
@@ -658,7 +674,14 @@ export function PlayerCalendar({ events, eventTypeColors = {}, className }: Play
       </div>
 
       {selectedOccurrence ? (
-        <EventDetailsModal occurrence={selectedOccurrence} onClose={() => setSelectedOccurrenceRef(null)} />
+        <EventDetailsModal
+          occurrence={selectedOccurrence}
+          onClose={() => setSelectedOccurrenceRef(null)}
+          onEdit={(occurrence) => {
+            setSelectedOccurrenceRef(null);
+            onEditEvent?.(occurrence);
+          }}
+        />
       ) : null}
     </section>
   );

@@ -8,7 +8,7 @@ import { usePersistedState } from '@/lib/usePersistedState';
 import { PlayerAnalyticsChart } from '@/components/coach/players/PlayerAnalyticsChart';
 import { PlayerAnalyticsLegend } from '@/components/coach/players/PlayerAnalyticsLegend';
 import { IndividualEventCreator } from '@/components/coach/players/IndividualEventCreator';
-import { PlayerCalendar } from '@/components/coach/players/PlayerCalendar';
+import { PlayerCalendar, type SelectedOccurrence } from '@/components/coach/players/PlayerCalendar';
 import { PlayerProfileCard } from '@/components/coach/players/PlayerProfileCard';
 import { PlayerSelectorDropdown } from '@/components/coach/players/PlayerSelectorDropdown';
 import { PlayerViewToggle } from '@/components/coach/players/PlayerViewToggle';
@@ -231,20 +231,39 @@ function DailyWellnessStatusStrip({
 
 function CalendarView({
   playerDataset,
+  teamPlayerIds,
+  editingEvent,
+  editingSourceEventIds,
   onEventCreated,
+  onEditEvent,
+  onCancelEdit,
   eventTypeColors,
 }: {
   playerDataset: TeamPlayerDataset;
+  teamPlayerIds: string[];
+  editingEvent: TeamPlayerDataset['calendarEvents'][number] | null;
+  editingSourceEventIds: string[];
   onEventCreated: () => void;
+  onEditEvent: (occurrence: SelectedOccurrence) => void;
+  onCancelEdit: () => void;
   eventTypeColors: Record<string, string>;
 }) {
   return (
     <>
-      <PlayerCalendar events={playerDataset.calendarEvents} eventTypeColors={eventTypeColors} className="xl:h-[760px]" />
+      <PlayerCalendar
+        events={playerDataset.calendarEvents}
+        eventTypeColors={eventTypeColors}
+        className="xl:h-[760px]"
+        onEditEvent={onEditEvent}
+      />
       <IndividualEventCreator
         playerId={playerDataset.player.id}
         playerName={playerDataset.player.name}
         teamId={playerDataset.player.teamId}
+        teamPlayerIds={teamPlayerIds}
+        editingEvent={editingEvent}
+        editingSourceEventIds={editingSourceEventIds}
+        onCancelEdit={onCancelEdit}
         onSaved={onEventCreated}
       />
     </>
@@ -260,6 +279,7 @@ export function PlayersPage() {
   const [playersError, setPlayersError] = useState<string | null>(null);
   const [selectedPlayerId, setSelectedPlayerId] = usePersistedState<string>('lodario:coach-players:selected-player', '');
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const eventTypeColors = useMemo(
     () => Object.fromEntries(customEventTypes.map((type) => [type.id, type.color])),
     [customEventTypes]
@@ -310,6 +330,21 @@ export function PlayersPage() {
   const selectedPlayerDataset = useMemo(() => {
     return teamPlayers.find((dataset) => dataset.player.id === selectedPlayerId) ?? teamPlayers[0];
   }, [selectedPlayerId, teamPlayers]);
+  const editingEvent = useMemo(() => {
+    if (!editingEventId) return null;
+    return teamPlayers.flatMap((dataset) => dataset.calendarEvents).find((event) => event.id === editingEventId) ?? null;
+  }, [editingEventId, teamPlayers]);
+  const editingSourceEventIds = useMemo(() => {
+    if (!editingEvent) return [];
+    if (editingEvent.sourceEventGroupId) {
+      return teamPlayers
+        .flatMap((dataset) => dataset.calendarEvents)
+        .filter((event) => event.coachManaged && event.sourceEventGroupId === editingEvent.sourceEventGroupId)
+        .map((event) => event.id);
+    }
+    return [editingEvent.id];
+  }, [editingEvent, teamPlayers]);
+  const teamPlayerIds = useMemo(() => teamPlayers.map((dataset) => dataset.player.id), [teamPlayers]);
 
   if (!selectedTeam.id) {
     return (
@@ -412,6 +447,11 @@ export function PlayersPage() {
         ) : (
           <CalendarView
             playerDataset={selectedPlayerDataset}
+            teamPlayerIds={teamPlayerIds}
+            editingEvent={editingEvent}
+            editingSourceEventIds={editingSourceEventIds}
+            onEditEvent={(occurrence) => setEditingEventId(occurrence.event.id)}
+            onCancelEdit={() => setEditingEventId(null)}
             onEventCreated={() => setRefreshVersion((version) => version + 1)}
             eventTypeColors={eventTypeColors}
           />
