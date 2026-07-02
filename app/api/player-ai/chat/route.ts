@@ -11,7 +11,15 @@ const MAX_MESSAGE_LENGTH = 2000;
 
 type ChatPayload = {
   message?: unknown;
+  conversation_id?: unknown;
 };
+
+type ConversationResult =
+  | { ok: true; id: string }
+  | { ok: false; response: NextResponse<{ error: string }> };
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function getBearerToken(request: NextRequest): string | null {
   const authorization = request.headers.get('authorization');
@@ -76,7 +84,7 @@ async function resolveUserRole(
 }
 
 async function requirePlayer(request: NextRequest): Promise<
-  | { ok: true; user: User }
+  | { ok: true; user: User; supabase: SupabaseClient }
   | { ok: false; response: NextResponse<{ error: string }> }
 > {
   const accessToken = getBearerToken(request);
@@ -110,7 +118,147 @@ async function requirePlayer(request: NextRequest): Promise<
     };
   }
 
-  return { ok: true, user };
+  return { ok: true, user, supabase };
+}
+
+function buildConversationTitle(message: string): string {
+  const normalized = message.replace(/\s+/g, ' ').trim();
+  return normalized.length > 80 ? `${normalized.slice(0, 77)}...` : normalized;
+}
+
+function normalizeConversationId(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  return trimmed;
+}
+
+async function getOrCreateConversation(params: {
+  supabase: SupabaseClient;
+  userId: string;
+  conversationId: string | null;
+  message: string;
+}): Promise<ConversationResult> {
+  if (params.conversationId) {
+    if (!UUID_PATTERN.test(params.conversationId)) {
+      return {
+        ok: false,
+        response: NextResponse.json({ error: 'Invalid conversation_id.' }, { status: 400 }),
+      };
+    }
+
+    const { data, error } = await params.supabase
+      .from('ai_conversations')
+      .select('id')
+      .eq('id', params.conversationId)
+      .eq('user_id', params.userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[player-ai] Conversation lookup failed:', error);
+      return {
+        ok: false,
+        response: NextResponse.json({ error: 'Unable to load conversation.' }, { status: 500 }),
+      };
+    }
+
+    if (!data?.id) {
+      return {
+        ok: false,
+        response: NextResponse.json({ error: 'Conversation not found.' }, { status: 404 }),
+      };
+    }
+
+    return { ok: true, id: data.id };
+  }
+
+  const { data, error } = await params.supabase
+    .from('ai_conversations')
+    .insert({
+      user_id: params.userId,
+      title: buildConversationTitle(params.message),
+    })
+    .select('id')
+    .single();
+
+  if (error || !data?.id) {
+    console.error('[player-ai] Conversation creation failed:', error);
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'Unable to create conversation.' }, { status: 500 }),
+    };
+  }
+
+  return { ok: true, id: data.id };
+}
+
+async function insertMessage(params: {
+  supabase: SupabaseClient;
+  conversationId: string;
+  userId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  modelUsed?: string;
+}): Promise<boolean> {
+  const { error } = await params.supabase.from('ai_messages').insert({
+    conversation_id: params.conversationId,
+    user_id: params.userId,
+    role: params.role,
+    content: params.content,
+    model_used: params.modelUsed,
+  });
+
+  if (error) {
+    console.error(`[player-ai] Failed to save ${params.role} message:`, error);
+    return false;
+  }
+
+  return true;
+}
+
+async function updateConversationTimestamp(params: {
+  supabase: SupabaseClient;
+  conversationId: string;
+  userId: string;
+}): Promise<void> {
+  const { error } = await params.supabase
+    .from('ai_conversations')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', params.conversationId)
+    .eq('user_id', params.userId);
+
+  if (error) {
+    console.error('[player-ai] Failed to update conversation timestamp:', error);
+  }
+}
+
+async function insertUsage(params: {
+  supabase: SupabaseClient;
+  userId: string;
+  tier: string;
+  modelUsed: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}): Promise<boolean> {
+  const { error } = await params.supabase.from('ai_usage').insert({
+    user_id: params.userId,
+    tier: params.tier,
+    model_used: params.modelUsed,
+    input_tokens: params.inputTokens,
+    output_tokens: params.outputTokens,
+    total_tokens: params.totalTokens,
+    request_count: 1,
+  });
+
+  if (error) {
+    console.error('[player-ai] Failed to save usage:', error);
+    return false;
+  }
+
+  return true;
 }
 
 export async function POST(request: NextRequest) {
@@ -138,6 +286,7 @@ export async function POST(request: NextRequest) {
   }
 
   const message = typeof payload.message === 'string' ? payload.message.trim() : '';
+  const conversationId = normalizeConversationId(payload.conversation_id);
 
   if (!message) {
     return NextResponse.json({ error: 'Message is required.' }, { status: 400 });
@@ -151,10 +300,71 @@ export async function POST(request: NextRequest) {
   }
 
   const tier = await resolvePlayerAiTier();
+  const conversationResult = await getOrCreateConversation({
+    supabase: authResult.supabase,
+    userId: authResult.user.id,
+    conversationId,
+    message,
+  });
+
+  if (!conversationResult.ok) {
+    return conversationResult.response;
+  }
+
+  const savedUserMessage = await insertMessage({
+    supabase: authResult.supabase,
+    conversationId: conversationResult.id,
+    userId: authResult.user.id,
+    role: 'user',
+    content: message,
+  });
+
+  if (!savedUserMessage) {
+    return NextResponse.json({ error: 'Unable to save message.' }, { status: 500 });
+  }
 
   try {
-    const response = await createPlayerAiResponse({ message, tier });
-    return NextResponse.json({ response, tier });
+    const aiResponse = await createPlayerAiResponse({ message, tier });
+
+    const savedAssistantMessage = await insertMessage({
+      supabase: authResult.supabase,
+      conversationId: conversationResult.id,
+      userId: authResult.user.id,
+      role: 'assistant',
+      content: aiResponse.content,
+      modelUsed: aiResponse.modelUsed,
+    });
+
+    if (!savedAssistantMessage) {
+      return NextResponse.json({ error: 'Unable to save assistant response.' }, { status: 500 });
+    }
+
+    const savedUsage = await insertUsage({
+      supabase: authResult.supabase,
+      userId: authResult.user.id,
+      tier,
+      modelUsed: aiResponse.modelUsed,
+      inputTokens: aiResponse.usage.inputTokens,
+      outputTokens: aiResponse.usage.outputTokens,
+      totalTokens: aiResponse.usage.totalTokens,
+    });
+
+    if (!savedUsage) {
+      return NextResponse.json({ error: 'Unable to save AI usage.' }, { status: 500 });
+    }
+
+    await updateConversationTimestamp({
+      supabase: authResult.supabase,
+      conversationId: conversationResult.id,
+      userId: authResult.user.id,
+    });
+
+    return NextResponse.json({
+      response: aiResponse.content,
+      conversation_id: conversationResult.id,
+      model_used: aiResponse.modelUsed,
+      tier,
+    });
   } catch (error) {
     console.error('[player-ai] OpenAI response failed:', error);
     return NextResponse.json(

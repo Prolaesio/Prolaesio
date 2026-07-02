@@ -6,6 +6,18 @@ import { getModelForPlayerTier, PlayerAiTier } from './model-config';
 
 let openAiClient: OpenAI | null = null;
 
+export type PlayerAiTokenUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+};
+
+export type PlayerAiResponse = {
+  content: string;
+  modelUsed: string;
+  usage: PlayerAiTokenUsage;
+};
+
 export const LODARIO_PLAYER_AI_SYSTEM_PROMPT = [
   'You are the Lodario player training assistant.',
   'Give read-only guidance based on the player training context provided by the app.',
@@ -33,9 +45,10 @@ export function getOpenAiClient(): OpenAI {
 export async function createPlayerAiResponse(params: {
   message: string;
   tier: PlayerAiTier;
-}): Promise<string> {
+}): Promise<PlayerAiResponse> {
+  const modelUsed = getModelForPlayerTier(params.tier);
   const response = await getOpenAiClient().responses.create({
-    model: getModelForPlayerTier(params.tier),
+    model: modelUsed,
     instructions: LODARIO_PLAYER_AI_SYSTEM_PROMPT,
     input: [
       {
@@ -50,6 +63,14 @@ export async function createPlayerAiResponse(params: {
     ],
   });
 
-  return response.output_text?.trim() ?? '';
+  return {
+    content: response.output_text?.trim() ?? '',
+    modelUsed,
+    usage: {
+      inputTokens: response.usage?.input_tokens ?? 0,
+      outputTokens: response.usage?.output_tokens ?? 0,
+      totalTokens: response.usage?.total_tokens ?? 0,
+    },
+  };
 }
 
