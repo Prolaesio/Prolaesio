@@ -9,7 +9,9 @@ import { useData } from '@/lib/DataContext';
 import { CalendarEvent, SessionType } from '@/lib/types';
 import { useRouter } from 'next/navigation';
 import { computeDurationMinutes, mapCalendarEventToSessionType } from '@/lib/calendarLogSession';
+import { resolveCalendarEventColorOverride } from '@/lib/calendar/colorOverrides';
 import { isBuiltInActivityEventType, isCoachManagedCalendarConfig } from '@/lib/calendar/events';
+import { usePersistedState } from '@/lib/usePersistedState';
 
 // Parse "HH:mm" into { hour, minute }
 function parseTime(timeStr: string): { hour: number; minute: number } {
@@ -102,8 +104,9 @@ function computeOverlapGroups(events: RenderedEvent[], maxCols: number): Map<str
 export default function CalendarPage() {
   const router = useRouter();
   const { calendarEvents } = useData();
-  const [view, setView] = useState<'Day' | 'Week'>('Week');
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [view, setView] = usePersistedState<'Day' | 'Week'>('lodario:player-calendar:view', 'Week');
+  const [currentDateKey, setCurrentDateKey] = usePersistedState('lodario:player-calendar:date', format(new Date(), 'yyyy-MM-dd'));
+  const currentDate = parseISO(currentDateKey);
   const [showEventModal, setShowEventModal] = useState(false);
   const [selectedDateForEvent, setSelectedDateForEvent] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | undefined>(undefined);
@@ -111,6 +114,12 @@ export default function CalendarPage() {
   const [editingInstanceDate, setEditingInstanceDate] = useState<string | undefined>(undefined);
   const [editingReadOnly, setEditingReadOnly] = useState(false);
   const [defaultStartHour, setDefaultStartHour] = useState<number | undefined>(undefined);
+  const [persistedOpenEvent, setPersistedOpenEvent] = usePersistedState<{
+    eventId: string;
+    instanceDate: string;
+    isRecurringInstance: boolean;
+    readOnly: boolean;
+  } | null>('lodario:player-calendar:open-event', null);
   const [logSessionPrompt, setLogSessionPrompt] = useState<{
     x: number;
     y: number;
@@ -120,13 +129,13 @@ export default function CalendarPage() {
   } | null>(null);
 
   const handlePrev = () => {
-    if (view === 'Week') setCurrentDate(subWeeks(currentDate, 1));
-    if (view === 'Day') setCurrentDate(subDays(currentDate, 1));
+    const nextDate = view === 'Week' ? subWeeks(currentDate, 1) : subDays(currentDate, 1);
+    setCurrentDateKey(format(nextDate, 'yyyy-MM-dd'));
   };
   
   const handleNext = () => {
-    if (view === 'Week') setCurrentDate(addWeeks(currentDate, 1));
-    if (view === 'Day') setCurrentDate(addDays(currentDate, 1));
+    const nextDate = view === 'Week' ? addWeeks(currentDate, 1) : addDays(currentDate, 1);
+    setCurrentDateKey(format(nextDate, 'yyyy-MM-dd'));
   };
 
   const handleAddEvent = (dateStr?: string, hour?: number) => {
@@ -136,6 +145,7 @@ export default function CalendarPage() {
     setEditingReadOnly(false);
     setSelectedDateForEvent(dateStr || format(currentDate, 'yyyy-MM-dd'));
     setDefaultStartHour(hour);
+    setPersistedOpenEvent(null);
     setShowEventModal(true);
   };
 
@@ -143,9 +153,16 @@ export default function CalendarPage() {
     setEditingEvent(event);
     setEditingIsRecurring(isRecurringInstance);
     setEditingInstanceDate(instanceDate);
-    setEditingReadOnly(isCoachManagedCalendarConfig(event.recurrenceConfig));
+    const readOnly = isCoachManagedCalendarConfig(event.recurrenceConfig);
+    setEditingReadOnly(readOnly);
     setSelectedDateForEvent(instanceDate);
     setDefaultStartHour(undefined);
+    setPersistedOpenEvent({
+      eventId: event.id,
+      instanceDate,
+      isRecurringInstance,
+      readOnly,
+    });
     setShowEventModal(true);
   };
 
@@ -156,7 +173,21 @@ export default function CalendarPage() {
     setEditingInstanceDate(undefined);
     setEditingReadOnly(false);
     setDefaultStartHour(undefined);
+    setPersistedOpenEvent(null);
   };
+
+  useEffect(() => {
+    if (!persistedOpenEvent || showEventModal || editingEvent) return;
+    const event = calendarEvents.find((candidate) => candidate.id === persistedOpenEvent.eventId);
+    if (!event) return;
+
+    setEditingEvent(event);
+    setEditingIsRecurring(persistedOpenEvent.isRecurringInstance);
+    setEditingInstanceDate(persistedOpenEvent.instanceDate);
+    setEditingReadOnly(persistedOpenEvent.readOnly);
+    setSelectedDateForEvent(persistedOpenEvent.instanceDate);
+    setShowEventModal(true);
+  }, [calendarEvents, editingEvent, persistedOpenEvent, showEventModal]);
 
   const handleEventLongPress = (payload: { x: number; y: number; date: string; duration: number; sessionType: SessionType }) => {
     setLogSessionPrompt({
@@ -293,7 +324,7 @@ function DayView({ currentDate, onAddEvent, onEditEvent, onEventLongPress }: {
   onEditEvent: (event: CalendarEvent, isRecurringInstance: boolean, instanceDate: string) => void;
   onEventLongPress: (payload: { x: number; y: number; date: string; duration: number; sessionType: SessionType }) => void;
 }) {
-  const { calendarEvents, customEventTypes, trainingLogs } = useData();
+  const { calendarEvents, calendarEventColorOverrides, customEventTypes, trainingLogs } = useData();
   const scheduleRef = useRef<HTMLDivElement>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
@@ -425,7 +456,7 @@ function DayView({ currentDate, onAddEvent, onEditEvent, onEventLongPress }: {
         endHour: finalParsedEnd.hour,
         endMinute: finalParsedEnd.minute,
         title: finalTitle,
-        color: event.color || getTypeColor(finalEventTypeId),
+        color: resolveCalendarEventColorOverride(event, finalEventTypeId, calendarEventColorOverrides) || event.color || getTypeColor(finalEventTypeId),
       });
     }
   });

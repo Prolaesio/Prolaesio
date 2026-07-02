@@ -3,8 +3,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { CalendarEvent, RecurrenceType } from '../lib/types';
 import { useData } from '../lib/DataContext';
-import { X, Save, Plus, Trash2, Check, FileText, ChevronDown, Lock } from 'lucide-react';
+import { X, Save, Plus, Trash2, Check, FileText, ChevronDown, Lock, Pencil, Palette } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { parseCoachCalendarMeta } from '../lib/calendar/events';
 
 interface EventModalProps {
   onClose: () => void;
@@ -19,10 +20,11 @@ interface EventModalProps {
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export function EventModal({ onClose, selectedDate, existingEvent, isRecurringInstance, instanceDate, defaultStartHour, readOnly = false }: EventModalProps) {
-  const { customEventTypes, saveCalendarEvent, deleteCalendarEvent, saveCustomEventType, deleteCustomEventType } = useData();
+  const { customEventTypes, saveCalendarEvent, deleteCalendarEvent, saveCalendarEventColorOverride, saveCustomEventType, deleteCustomEventType } = useData();
 
   // --- Event type long-press-to-delete ---
   const [deleteTypeId, setDeleteTypeId] = useState<string | null>(null);
+  const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
   const typeTimerRef = useRef<number | null>(null);
   const typeLongPressTriggeredRef = useRef(false);
 
@@ -59,6 +61,10 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
   const handleDeleteType = (typeId: string) => {
     deleteCustomEventType(typeId);
     setDeleteTypeId(null);
+    if (editingTypeId === typeId) {
+      setEditingTypeId(null);
+      setIsCreatingNewType(false);
+    }
     if (eventTypeId === typeId) {
       const remaining = customEventTypes.filter(t => t.id !== typeId);
       setEventTypeId(remaining[0]?.id || 'other');
@@ -66,6 +72,9 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
   };
   
   const isEditing = !!existingEvent;
+  const [isDetailMode, setIsDetailMode] = useState(!!existingEvent);
+  const coachMeta = parseCoachCalendarMeta(existingEvent?.recurrenceConfig);
+  const canEditEventContent = !readOnly;
 
   // Compute default start/end based on defaultStartHour (Feature 5)
   const computeDefaultStart = () => {
@@ -96,6 +105,9 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
   const [recurrenceEndDate, setRecurrenceEndDate] = useState<string>(existingEvent?.recurrenceEndDate || ''); // Feature 7
   const [applyOnlyToThis, setApplyOnlyToThis] = useState(false);
   const [anticipatedIntensity, setAnticipatedIntensity] = useState<'Low' | 'Moderate' | 'High' | undefined>(existingEvent?.anticipatedIntensity);
+  const currentEventColor = existingEvent?.color || customEventTypes.find(type => type.id === (existingEvent?.eventTypeId || eventTypeId))?.color || '#845ef7';
+  const [displayColor, setDisplayColor] = useState(currentEventColor);
+  const [showColorSaveChoices, setShowColorSaveChoices] = useState(false);
 
   // Description: collapsed row by default, expands into a textarea on click.
   // For recurring-instance edits, prefer any per-occurrence override description.
@@ -122,6 +134,34 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
   const [newTypeColor, setNewTypeColor] = useState('#845ef7');
   const [newTypeIsActivity, setNewTypeIsActivity] = useState(false);
 
+  const resetTypeEditor = () => {
+    setIsCreatingNewType(false);
+    setEditingTypeId(null);
+    setNewTypeName('');
+    setNewTypeColor('#845ef7');
+    setNewTypeIsActivity(false);
+  };
+
+  const startCreateType = () => {
+    setDeleteTypeId(null);
+    setEditingTypeId(null);
+    setNewTypeName('');
+    setNewTypeColor('#845ef7');
+    setNewTypeIsActivity(false);
+    setIsCreatingNewType(true);
+  };
+
+  const startEditType = (typeId: string) => {
+    const type = customEventTypes.find(t => t.id === typeId);
+    if (!type) return;
+    setDeleteTypeId(null);
+    setEditingTypeId(type.id);
+    setNewTypeName(type.name);
+    setNewTypeColor(type.color);
+    setNewTypeIsActivity(type.isActivity ?? false);
+    setIsCreatingNewType(true);
+  };
+
   const showIntensityPicker = isCreatingNewType
     ? newTypeIsActivity
     : !!selectedType?.isActivity;
@@ -146,34 +186,35 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
   // Feature 9: Save event type immediately without closing the modal
   const handleSaveEventType = () => {
     if (!newTypeName.trim()) return;
-    const newId = uuidv4();
+    const existingType = editingTypeId ? customEventTypes.find(type => type.id === editingTypeId) : undefined;
+    const typeId = editingTypeId || uuidv4();
     saveCustomEventType({
-      id: newId,
+      id: typeId,
       name: newTypeName.trim(),
       color: newTypeColor,
-      isBuiltIn: false,
+      icon: existingType?.icon,
+      isBuiltIn: existingType?.isBuiltIn ?? false,
       isActivity: newTypeIsActivity,
     });
-    setEventTypeId(newId);
-    setIsCreatingNewType(false);
-    setNewTypeName('');
-    setNewTypeColor('#845ef7');
-    setNewTypeIsActivity(false);
+    setEventTypeId(typeId);
+    resetTypeEditor();
   };
 
   const handleSave = () => {
-    if (readOnly) return;
+    if (!canEditEventContent) return;
 
     let finalEventTypeId = eventTypeId;
 
     // If still in new-type creation mode and there's a name, save it on event save too
     if (isCreatingNewType && newTypeName.trim()) {
-      finalEventTypeId = uuidv4();
+      const existingType = editingTypeId ? customEventTypes.find(type => type.id === editingTypeId) : undefined;
+      finalEventTypeId = editingTypeId || uuidv4();
       saveCustomEventType({
         id: finalEventTypeId,
         name: newTypeName.trim(),
         color: newTypeColor,
-        isBuiltIn: false,
+        icon: existingType?.icon,
+        isBuiltIn: existingType?.isBuiltIn ?? false,
         isActivity: newTypeIsActivity,
       });
     }
@@ -232,7 +273,7 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
   };
 
   const handleDelete = () => {
-    if (readOnly) return;
+    if (!canEditEventContent) return;
     if (!existingEvent) return;
 
     // Single-instance delete of a recurring event
@@ -250,6 +291,125 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
     }
     onClose();
   };
+
+  const handleSaveColorOverride = (scope: 'event' | 'event_type' | 'coach') => {
+    if (!existingEvent || !coachMeta?.coachId) return;
+
+    saveCalendarEventColorOverride({
+      scope,
+      eventId: scope === 'event' ? existingEvent.id : undefined,
+      eventTypeId: scope === 'event_type' ? eventTypeId : undefined,
+      coachId: coachMeta.coachId,
+      color: displayColor,
+    });
+    setShowColorSaveChoices(false);
+  };
+
+  const detailType = customEventTypes.find(type => type.id === eventTypeId);
+  const detailDate = (instanceDate || eventDate);
+  const detailTitle = title || detailType?.name || 'Event';
+
+  if (isDetailMode && existingEvent) {
+    return (
+      <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in touch-none p-4">
+        <div className="bg-[var(--background)] w-full max-w-md rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden border border-[rgba(255,255,255,0.1)] animate-slide-up pb-safe">
+          <div className="border-b border-[rgba(255,255,255,0.1)] p-4 flex justify-between items-center bg-[var(--card-bg)]">
+            <h2 className="text-lg font-bold text-white">Event Details</h2>
+            <div className="flex items-center gap-2">
+              {canEditEventContent ? (
+                <button
+                  type="button"
+                  onClick={() => setIsDetailMode(false)}
+                  className="p-2 text-gray-300 hover:text-white rounded-full bg-[rgba(255,255,255,0.05)]"
+                  aria-label="Edit event"
+                >
+                  <Pencil size={18} />
+                </button>
+              ) : null}
+              <button onClick={onClose} className="p-2 text-gray-400 hover:text-white rounded-full bg-[rgba(255,255,255,0.05)]" aria-label="Close event details">
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+
+          <div className="p-5 overflow-y-auto max-h-[70vh] space-y-4">
+            {readOnly ? (
+              <div className="p-3 rounded-xl bg-[rgba(var(--accent-secondary-rgb),0.1)] border border-[rgba(var(--accent-secondary-rgb),0.25)] text-xs text-gray-200 font-medium flex items-center">
+                <Lock size={14} className="mr-2 text-[var(--accent-secondary)]" />
+                Assigned by coach
+              </div>
+            ) : null}
+
+            <div className="flex items-start gap-3">
+              <span className="mt-1 h-4 w-4 rounded-full border border-white/20" style={{ backgroundColor: displayColor }} />
+              <div>
+                <p className="text-xs uppercase tracking-wider text-gray-400">Title</p>
+                <p className="mt-1 text-lg font-bold text-white">{detailTitle}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <p className="text-xs uppercase tracking-wider text-gray-400">Type</p>
+                <p className="mt-1 text-white">{detailType?.name || eventTypeId}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wider text-gray-400">Date</p>
+                <p className="mt-1 text-white">{detailDate}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wider text-gray-400">Time</p>
+                <p className="mt-1 text-white">{startTime} - {endTime}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wider text-gray-400">Intensity</p>
+                <p className="mt-1 text-white">{anticipatedIntensity || '--'}</p>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs uppercase tracking-wider text-gray-400">Description</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-gray-200">{description || 'No description provided.'}</p>
+            </div>
+
+            {readOnly && coachMeta?.coachId ? (
+              <div className="rounded-xl border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.04)] p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                    <Palette size={14} />
+                    Display Color
+                  </label>
+                  <input
+                    type="color"
+                    value={displayColor}
+                    onChange={(event) => {
+                      setDisplayColor(event.target.value);
+                      setShowColorSaveChoices(true);
+                    }}
+                    className="h-8 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
+                  />
+                </div>
+
+                {showColorSaveChoices ? (
+                  <div className="mt-3 space-y-2">
+                    <button type="button" onClick={() => handleSaveColorOverride('event')} className="w-full rounded-lg bg-[rgba(255,255,255,0.08)] px-3 py-2 text-left text-xs font-semibold text-white">
+                      Save only for this event
+                    </button>
+                    <button type="button" onClick={() => handleSaveColorOverride('event_type')} className="w-full rounded-lg bg-[rgba(255,255,255,0.08)] px-3 py-2 text-left text-xs font-semibold text-white">
+                      Save for all coach-assigned events of this type
+                    </button>
+                    <button type="button" onClick={() => handleSaveColorOverride('coach')} className="w-full rounded-lg bg-[rgba(255,255,255,0.08)] px-3 py-2 text-left text-xs font-semibold text-white">
+                      Save for all coach-assigned events
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in touch-none p-4">
@@ -272,10 +432,10 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
             </div>
           )}
 
-          <fieldset disabled={readOnly} className={readOnly ? 'opacity-80' : undefined}>
+          <fieldset disabled={!canEditEventContent} className={!canEditEventContent ? 'opacity-80' : undefined}>
           
           {/* Single-instance toggle for recurring events */}
-          {isEditing && isRecurringInstance && !readOnly && (
+          {isEditing && isRecurringInstance && canEditEventContent && (
             <div className="mb-5 p-3 rounded-xl bg-[rgba(var(--accent-secondary-rgb),0.1)] border border-[rgba(var(--accent-secondary-rgb),0.2)]">
               <label className="flex items-center space-x-3 cursor-pointer touch-target">
                 <input
@@ -327,7 +487,7 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
                   </button>
                 ))}
                 <button 
-                  onClick={() => setIsCreatingNewType(true)}
+                  onClick={startCreateType}
                   className="px-3 py-2 rounded-lg text-xs font-bold transition-all border border-dashed border-[rgba(255,255,255,0.3)] text-gray-300 flex items-center"
                 >
                   <Plus size={14} className="mr-1" /> New
@@ -384,12 +544,7 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
                     <Check size={12} className="mr-1" /> Save Type
                   </button>
                   <button 
-                    onClick={() => {
-                      setIsCreatingNewType(false);
-                      setNewTypeName('');
-                      setNewTypeColor('#845ef7');
-                      setNewTypeIsActivity(false);
-                    }}
+                    onClick={resetTypeEditor}
                     className="text-xs text-gray-400 hover:text-white px-2 py-1"
                   >
                     Cancel
@@ -403,9 +558,15 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
           {deleteTypeId && (
             <div className="mt-2 p-3 rounded-xl bg-[rgba(255,107,107,0.1)] border border-[rgba(255,107,107,0.3)] animate-fade-in">
               <p className="text-xs text-gray-200 mb-3">
-                Delete <span className="font-bold text-white">&ldquo;{customEventTypes.find(t => t.id === deleteTypeId)?.name}&rdquo;</span>?
+                Manage <span className="font-bold text-white">&ldquo;{customEventTypes.find(t => t.id === deleteTypeId)?.name}&rdquo;</span>
               </p>
               <div className="flex space-x-2">
+                <button
+                  onClick={() => startEditType(deleteTypeId)}
+                  className="flex-1 py-2 rounded-lg text-xs font-bold bg-[rgba(255,255,255,0.08)] text-white flex items-center justify-center transition-transform active:scale-95"
+                >
+                  <Pencil size={14} className="mr-1.5" /> Edit
+                </button>
                 <button
                   onClick={() => handleDeleteType(deleteTypeId)}
                   className="flex-1 py-2 rounded-lg text-xs font-bold bg-[#ff6b6b] text-white flex items-center justify-center transition-transform active:scale-95"
@@ -628,7 +789,7 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
 
           {/* Action Buttons */}
           <div className="space-y-3">
-            {!readOnly ? (
+            {canEditEventContent ? (
               <>
                 <button 
                   onClick={handleSave}

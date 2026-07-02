@@ -12,6 +12,7 @@ import { TeamAveragesPanel } from '@/components/coach/analytics/TeamAveragesPane
 import type { AnalyticsViewMode, ComparisonMetricKey, TeamAnalyticsDataset, TeamPlayerComparisonPoint } from '@/components/coach/analytics/types';
 import { useCoachTeam } from '@/lib/coach/selectedTeam';
 import { useCoachSelectedTeamInsights } from '@/lib/coach/teamInsights';
+import { usePersistedState } from '@/lib/usePersistedState';
 
 function AveragesView({
   legendItems,
@@ -226,15 +227,17 @@ function IndividualsView({
 
 export function CoachAnalyticsPage() {
   const { selectedTeam } = useCoachTeam();
-  const [viewMode, setViewMode] = useState<AnalyticsViewMode>('averages');
+  const [viewMode, setViewMode] = usePersistedState<AnalyticsViewMode>('lodario:coach-analytics:view', 'averages');
   const { analyticsData: teamAnalytics, isLoading, error } = useCoachSelectedTeamInsights(selectedTeam.id);
   const hasAnalyticsData = teamAnalytics.labels.length > 0;
-  const [selectedDayLabel, setSelectedDayLabel] = useState<string>('');
+  const [selectedDayLabel, setSelectedDayLabel] = usePersistedState<string>('lodario:coach-analytics:selected-day', '');
 
   useEffect(() => {
     const latestLabel = teamAnalytics.labels[teamAnalytics.labels.length - 1] ?? '';
-    setSelectedDayLabel(latestLabel);
-  }, [teamAnalytics.labels]);
+    if (!selectedDayLabel || !teamAnalytics.labels.includes(selectedDayLabel)) {
+      setSelectedDayLabel(latestLabel);
+    }
+  }, [selectedDayLabel, setSelectedDayLabel, teamAnalytics.labels]);
 
   const playersForSelectedDay = useMemo(() => {
     if (!selectedDayLabel) return [];

@@ -1,6 +1,6 @@
 export type PlayerViewMode = 'analytics' | 'calendar';
 
-export type PlayerSessionType = 'training' | 'game' | 'gym' | 'recovery' | 'solo' | 'meeting' | 'other';
+export type PlayerSessionType = string;
 export type PlayerCalendarRecurrence = 'none' | 'daily' | 'weekly' | 'monthly';
 export type PlayerCalendarIntensity = 'Low' | 'Moderate' | 'High';
 export type PlayerCalendarAssignmentScope = 'team' | 'player';

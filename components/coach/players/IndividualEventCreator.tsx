@@ -1,7 +1,7 @@
 'use client';
 
 import { parseISO } from 'date-fns';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   PlayerCalendarIntensity,
   PlayerCalendarRecurrence,
@@ -11,6 +11,7 @@ import type {
 import { Toggle } from '@/components/ui/Toggle';
 import { useAuth } from '@/lib/AuthContext';
 import { withCoachCalendarMeta } from '@/lib/calendar/events';
+import { useData } from '@/lib/DataContext';
 import { supabase } from '@/lib/supabase';
 
 interface IndividualEventCreatorProps {
@@ -37,8 +38,15 @@ interface IndividualEventFormState {
   anticipatedIntensity?: PlayerCalendarIntensity;
 }
 
-const activityTypes = new Set<PlayerSessionType>(['training', 'game', 'gym', 'recovery', 'solo']);
-const eventTypeOptions: PlayerSessionType[] = ['training', 'game', 'gym', 'recovery', 'solo', 'meeting', 'other'];
+const defaultCoachEventTypes = [
+  { id: 'training', name: 'Training', color: '#22c55e', isActivity: true },
+  { id: 'game', name: 'Game', color: '#ff6b6b', isActivity: true },
+  { id: 'gym', name: 'Gym', color: '#845ef7', isActivity: true },
+  { id: 'recovery', name: 'Recovery', color: '#38bdf8', isActivity: true },
+  { id: 'solo', name: 'Solo', color: '#ffd43b', isActivity: true },
+  { id: 'meeting', name: 'Meeting', color: '#adb5bd', isActivity: false },
+  { id: 'other', name: 'Other', color: '#adb5bd', isActivity: false },
+] as const;
 const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function getTodayDateKey(now = new Date()): string {
@@ -93,10 +101,29 @@ export function IndividualEventCreator({
   onSaved,
 }: IndividualEventCreatorProps) {
   const { user } = useAuth();
+  const { customEventTypes } = useData();
   const [form, setForm] = useState<IndividualEventFormState>(createDefaultForm);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const eventTypeOptions = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; color: string; isActivity: boolean }>(
+      defaultCoachEventTypes.map((type) => [type.id, { ...type }])
+    );
+    customEventTypes.forEach((type) => {
+      map.set(type.id, {
+        id: type.id,
+        name: type.name,
+        color: type.color,
+        isActivity: type.isActivity ?? false,
+      });
+    });
+    return Array.from(map.values());
+  }, [customEventTypes]);
+  const activityTypes = useMemo(
+    () => new Set(eventTypeOptions.filter((type) => type.isActivity).map((type) => type.id)),
+    [eventTypeOptions]
+  );
 
   useEffect(() => {
     setForm(createDefaultForm());
@@ -261,16 +288,17 @@ export function IndividualEventCreator({
           <div className="mt-2 flex flex-wrap gap-2">
             {eventTypeOptions.map((type) => (
               <button
-                key={type}
+                key={type.id}
                 type="button"
-                onClick={() => setForm((previous) => ({ ...previous, eventType: type }))}
+                onClick={() => setForm((previous) => ({ ...previous, eventType: type.id }))}
                 className={`rounded-lg px-3 py-2 text-xs font-semibold capitalize transition-colors ${
-                  form.eventType === type
-                    ? 'bg-[var(--accent-secondary)] text-white'
+                  form.eventType === type.id
+                    ? 'text-black'
                     : 'border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.05)] text-gray-300 hover:text-white'
                 }`}
+                style={form.eventType === type.id ? { backgroundColor: type.color } : undefined}
               >
-                {type}
+                {type.name}
               </button>
             ))}
           </div>

@@ -1,4 +1,4 @@
-export type TeamEventType = 'training' | 'game' | 'gym' | 'recovery' | 'solo' | 'meeting' | 'other';
+export type TeamEventType = string;
 
 export type TeamCalendarItemKind = 'event' | 'task';
 

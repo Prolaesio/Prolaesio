@@ -179,6 +179,17 @@ export interface CalendarEvent {
   anticipatedIntensity?: 'Low' | 'Moderate' | 'High'; // for training/gym sessions
 }
 
+export type CalendarEventColorOverrideScope = 'event' | 'event_type' | 'coach';
+
+export interface CalendarEventColorOverride {
+  id?: string;
+  scope: CalendarEventColorOverrideScope;
+  eventId?: string | null;
+  eventTypeId?: string | null;
+  coachId?: string | null;
+  color: string;
+}
+
 export interface CustomEventType {
   id: string;
   name: string; // e.g., 'School', 'Team Training'

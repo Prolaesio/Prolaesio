@@ -1,12 +1,14 @@
 import { addDays, addWeeks, format, isSameDay, startOfWeek, subDays, subWeeks } from 'date-fns';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { CSSProperties } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { TeamCalendarItem } from '@/components/coach/calendar/types';
 import { resolveCalendarOccurrence } from '@/lib/calendar/events';
+import { usePersistedState } from '@/lib/usePersistedState';
 
 interface TeamCalendarProps {
   items: TeamCalendarItem[];
+  eventTypeColors?: Record<string, string>;
   className?: string;
   style?: CSSProperties;
   selectedItemId?: string | null;
@@ -114,7 +116,8 @@ function computeOverlapGroups(events: ParsedCalendarItem[], maxCols: number): Ma
   return result;
 }
 
-function getItemColor(type: TeamCalendarItem['type']) {
+function getItemColor(type: TeamCalendarItem['type'], eventTypeId: string | undefined, eventTypeColors: Record<string, string>) {
+  if (eventTypeId && eventTypeColors[eventTypeId]) return eventTypeColors[eventTypeId];
   if (type === 'training' || type === 'game' || type === 'gym') {
     return 'var(--accent-primary)';
   }
@@ -179,12 +182,14 @@ function DaySchedule({
   selectedItemId,
   onSelectItem,
   onSelectEmptySlot,
+  eventTypeColors,
 }: {
   date: Date;
   items: TeamCalendarItem[];
   selectedItemId?: string | null;
   onSelectItem?: (item: TeamCalendarItem, instanceDate: string) => void;
   onSelectEmptySlot?: (date: string, hour: number) => void;
+  eventTypeColors: Record<string, string>;
 }) {
   const scheduleRef = useRef<HTMLDivElement>(null);
   const dateKey = format(date, 'yyyy-MM-dd');
@@ -251,7 +256,7 @@ function DaySchedule({
                         item.kind === 'task' ? 'border border-dashed border-white/30' : ''
                       } ${item.status === 'completed' ? 'opacity-45' : 'opacity-75'} ${item.isDraft ? 'border border-amber-300/50' : ''} ${isSelected ? 'ring-2 ring-[var(--accent-secondary)]' : ''}`}
                       style={{
-                        backgroundColor: getItemColor(item.type),
+                        backgroundColor: getItemColor(item.type, item.renderedEventTypeId, eventTypeColors),
                         top: `${coverage.top * 100}%`,
                         height: `${coverage.height * 100}%`,
                         left: totalColumns > 1 ? `${column * slotWidth}%` : '0',
@@ -307,12 +312,14 @@ function WeekSchedule({
   selectedItemId,
   onSelectItem,
   onSelectEmptySlot,
+  eventTypeColors,
 }: {
   currentDate: Date;
   items: TeamCalendarItem[];
   selectedItemId?: string | null;
   onSelectItem?: (item: TeamCalendarItem, instanceDate: string) => void;
   onSelectEmptySlot?: (date: string, hour: number) => void;
+  eventTypeColors: Record<string, string>;
 }) {
   const scheduleRef = useRef<HTMLDivElement>(null);
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
@@ -405,7 +412,7 @@ function WeekSchedule({
                               item.kind === 'task' ? 'border border-dashed border-white/30' : ''
                             } ${item.status === 'completed' ? 'opacity-45' : 'opacity-75'} ${item.isDraft ? 'border border-amber-300/50' : ''} ${isSelected ? 'ring-2 ring-[var(--accent-secondary)]' : ''}`}
                             style={{
-                              backgroundColor: getItemColor(item.type),
+                              backgroundColor: getItemColor(item.type, item.renderedEventTypeId, eventTypeColors),
                               top: `${coverage.top * 100}%`,
                               height: `${coverage.height * 100}%`,
                               left: totalColumns > 1 ? `${column * slotWidth}%` : '0',
@@ -466,9 +473,11 @@ export function TeamCalendar({
   selectedItemId,
   onSelectItem,
   onSelectEmptySlot,
+  eventTypeColors = {},
 }: TeamCalendarProps) {
-  const [view, setView] = useState<'Day' | 'Week'>('Week');
-  const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
+  const [view, setView] = usePersistedState<'Day' | 'Week'>('lodario:coach-team-calendar:view', 'Week');
+  const [currentDateKey, setCurrentDateKey] = usePersistedState('lodario:coach-team-calendar:date', format(new Date(), 'yyyy-MM-dd'));
+  const currentDate = useMemo(() => new Date(`${currentDateKey}T00:00:00`), [currentDateKey]);
 
   const viewLabel =
     view === 'Week'
@@ -497,7 +506,7 @@ export function TeamCalendar({
           <button
             type="button"
             onClick={() =>
-              view === 'Week' ? setCurrentDate((date) => subWeeks(date, 1)) : setCurrentDate((date) => subDays(date, 1))
+              setCurrentDateKey(format(view === 'Week' ? subWeeks(currentDate, 1) : subDays(currentDate, 1), 'yyyy-MM-dd'))
             }
             className="rounded-full p-1.5 text-gray-300 transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-white"
             aria-label="Previous period"
@@ -508,7 +517,7 @@ export function TeamCalendar({
           <button
             type="button"
             onClick={() =>
-              view === 'Week' ? setCurrentDate((date) => addWeeks(date, 1)) : setCurrentDate((date) => addDays(date, 1))
+              setCurrentDateKey(format(view === 'Week' ? addWeeks(currentDate, 1) : addDays(currentDate, 1), 'yyyy-MM-dd'))
             }
             className="rounded-full p-1.5 text-gray-300 transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-white"
             aria-label="Next period"
@@ -526,6 +535,7 @@ export function TeamCalendar({
             selectedItemId={selectedItemId}
             onSelectItem={onSelectItem}
             onSelectEmptySlot={onSelectEmptySlot}
+            eventTypeColors={eventTypeColors}
           />
         ) : null}
         {view === 'Week' ? (
@@ -537,6 +547,7 @@ export function TeamCalendar({
                 selectedItemId={selectedItemId}
                 onSelectItem={onSelectItem}
                 onSelectEmptySlot={onSelectEmptySlot}
+                eventTypeColors={eventTypeColors}
               />
             </div>
             <WeekSchedule
@@ -545,6 +556,7 @@ export function TeamCalendar({
               selectedItemId={selectedItemId}
               onSelectItem={onSelectItem}
               onSelectEmptySlot={onSelectEmptySlot}
+              eventTypeColors={eventTypeColors}
             />
           </>
         ) : null}

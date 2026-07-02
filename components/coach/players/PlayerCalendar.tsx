@@ -1,11 +1,13 @@
 import { addDays, addWeeks, format, isSameDay, startOfWeek, subDays, subWeeks } from 'date-fns';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { PlayerCalendarEvent } from '@/components/coach/players/types';
 import { resolveCalendarOccurrence } from '@/lib/calendar/events';
+import { usePersistedState } from '@/lib/usePersistedState';
 
 interface PlayerCalendarProps {
   events: PlayerCalendarEvent[];
+  eventTypeColors?: Record<string, string>;
   className?: string;
 }
 
@@ -115,7 +117,8 @@ function computeOverlapGroups(events: ParsedEvent[], maxCols: number): Map<strin
   return result;
 }
 
-function getEventColor(type: PlayerCalendarEvent['type']) {
+function getEventColor(type: PlayerCalendarEvent['type'], eventTypeId: string | undefined, eventTypeColors: Record<string, string>) {
+  if (eventTypeId && eventTypeColors[eventTypeId]) return eventTypeColors[eventTypeId];
   if (type === 'training' || type === 'game' || type === 'gym') {
     return 'var(--accent-primary)';
   }
@@ -127,7 +130,7 @@ function parseDayEvents(events: PlayerCalendarEvent[], dateString: string): Pars
 
   events.forEach((event) => {
     if (!event.visibleInCoachPlayerCalendar) return;
-    if (event.isDraft) return;
+    if (event.isDraft && !event.coachManaged) return;
 
     const occurrence = resolveCalendarOccurrence(
       {
@@ -264,10 +267,12 @@ function DaySchedule({
   date,
   events,
   onSelectOccurrence,
+  eventTypeColors,
 }: {
   date: Date;
   events: PlayerCalendarEvent[];
   onSelectOccurrence: (occurrence: SelectedOccurrence) => void;
+  eventTypeColors: Record<string, string>;
 }) {
   const scheduleRef = useRef<HTMLDivElement>(null);
   const dateKey = format(date, 'yyyy-MM-dd');
@@ -319,9 +324,9 @@ function DaySchedule({
                   return (
                     <div
                       key={`${event.layoutId}-${hour}`}
-                      className="absolute cursor-pointer rounded-r opacity-75"
+                      className={`absolute cursor-pointer rounded-r opacity-75 ${event.isDraft ? 'border border-amber-300/50' : ''}`}
                       style={{
-                        backgroundColor: getEventColor(event.type),
+                        backgroundColor: getEventColor(event.type, event.renderedEventTypeId, eventTypeColors),
                         top: `${coverage.top * 100}%`,
                         height: `${coverage.height * 100}%`,
                         left: totalColumns > 1 ? `${column * slotWidth}%` : '0',
@@ -389,10 +394,12 @@ function WeekSchedule({
   currentDate,
   events,
   onSelectOccurrence,
+  eventTypeColors,
 }: {
   currentDate: Date;
   events: PlayerCalendarEvent[];
   onSelectOccurrence: (occurrence: SelectedOccurrence) => void;
+  eventTypeColors: Record<string, string>;
 }) {
   const scheduleRef = useRef<HTMLDivElement>(null);
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
@@ -469,9 +476,9 @@ function WeekSchedule({
                         return (
                           <div
                             key={`${event.layoutId}-${hour}`}
-                            className="absolute cursor-pointer opacity-75"
+                            className={`absolute cursor-pointer opacity-75 ${event.isDraft ? 'border border-amber-300/50' : ''}`}
                             style={{
-                              backgroundColor: getEventColor(event.type),
+                              backgroundColor: getEventColor(event.type, event.renderedEventTypeId, eventTypeColors),
                               top: `${coverage.top * 100}%`,
                               height: `${coverage.height * 100}%`,
                               left: totalColumns > 1 ? `${column * slotWidth}%` : '0',
@@ -539,10 +546,46 @@ function WeekSchedule({
   );
 }
 
-export function PlayerCalendar({ events, className }: PlayerCalendarProps) {
-  const [view, setView] = useState<'Day' | 'Week'>('Week');
-  const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
-  const [selectedOccurrence, setSelectedOccurrence] = useState<SelectedOccurrence | null>(null);
+export function PlayerCalendar({ events, eventTypeColors = {}, className }: PlayerCalendarProps) {
+  const [view, setView] = usePersistedState<'Day' | 'Week'>('lodario:coach-player-calendar:view', 'Week');
+  const [currentDateKey, setCurrentDateKey] = usePersistedState('lodario:coach-player-calendar:date', format(new Date(), 'yyyy-MM-dd'));
+  const currentDate = useMemo(() => new Date(`${currentDateKey}T00:00:00`), [currentDateKey]);
+  const [selectedOccurrenceRef, setSelectedOccurrenceRef] = usePersistedState<{ eventId: string; instanceDate: string } | null>('lodario:coach-player-calendar:open-event', null);
+  const selectedOccurrence = useMemo<SelectedOccurrence | null>(() => {
+    if (!selectedOccurrenceRef) return null;
+    const event = events.find((candidate) => candidate.id === selectedOccurrenceRef.eventId);
+    if (!event) return null;
+    const occurrence = resolveCalendarOccurrence(
+      {
+        date: event.date,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        startDate: event.startDate,
+        endDate: event.endDate,
+        kind: event.kind ?? 'event',
+        title: event.title,
+        description: event.description,
+        eventTypeId: event.type,
+        recurrence: event.recurrence,
+        recurrenceConfig: event.recurrenceConfig,
+        recurrenceEndDate: event.recurrenceEndDate,
+        excludedDates: event.excludedDates,
+        overrides: event.overrides,
+        anticipatedIntensity: event.anticipatedIntensity,
+      },
+      selectedOccurrenceRef.instanceDate
+    );
+    if (!occurrence) return null;
+    return {
+      event,
+      instanceDate: selectedOccurrenceRef.instanceDate,
+      title: occurrence.title,
+      description: occurrence.description,
+      eventTypeId: occurrence.eventTypeId,
+      startTime: occurrence.startTime,
+      endTime: occurrence.endTime,
+    };
+  }, [events, selectedOccurrenceRef]);
 
   const viewLabel = view === 'Week' ? `Week of ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'MMM d')}` : format(currentDate, 'MMM d, yyyy');
 
@@ -567,7 +610,7 @@ export function PlayerCalendar({ events, className }: PlayerCalendarProps) {
         <div className="flex items-center gap-2 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2 py-1">
           <button
             type="button"
-            onClick={() => (view === 'Week' ? setCurrentDate((date) => subWeeks(date, 1)) : setCurrentDate((date) => subDays(date, 1)))}
+            onClick={() => setCurrentDateKey(format(view === 'Week' ? subWeeks(currentDate, 1) : subDays(currentDate, 1), 'yyyy-MM-dd'))}
             className="rounded-full p-1.5 text-gray-300 transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-white"
             aria-label="Previous period"
           >
@@ -576,7 +619,7 @@ export function PlayerCalendar({ events, className }: PlayerCalendarProps) {
           <p className="min-w-[148px] text-center text-xs font-semibold text-white">{viewLabel}</p>
           <button
             type="button"
-            onClick={() => (view === 'Week' ? setCurrentDate((date) => addWeeks(date, 1)) : setCurrentDate((date) => addDays(date, 1)))}
+            onClick={() => setCurrentDateKey(format(view === 'Week' ? addWeeks(currentDate, 1) : addDays(currentDate, 1), 'yyyy-MM-dd'))}
             className="rounded-full p-1.5 text-gray-300 transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-white"
             aria-label="Next period"
           >
@@ -590,7 +633,8 @@ export function PlayerCalendar({ events, className }: PlayerCalendarProps) {
           <DaySchedule
             date={currentDate}
             events={events}
-            onSelectOccurrence={setSelectedOccurrence}
+            onSelectOccurrence={(occurrence) => setSelectedOccurrenceRef({ eventId: occurrence.event.id, instanceDate: occurrence.instanceDate })}
+            eventTypeColors={eventTypeColors}
           />
         ) : null}
         {view === 'Week' ? (
@@ -599,20 +643,22 @@ export function PlayerCalendar({ events, className }: PlayerCalendarProps) {
               <DaySchedule
                 date={currentDate}
                 events={events}
-                onSelectOccurrence={setSelectedOccurrence}
+                onSelectOccurrence={(occurrence) => setSelectedOccurrenceRef({ eventId: occurrence.event.id, instanceDate: occurrence.instanceDate })}
+                eventTypeColors={eventTypeColors}
               />
             </div>
             <WeekSchedule
               currentDate={currentDate}
               events={events}
-              onSelectOccurrence={setSelectedOccurrence}
+              onSelectOccurrence={(occurrence) => setSelectedOccurrenceRef({ eventId: occurrence.event.id, instanceDate: occurrence.instanceDate })}
+              eventTypeColors={eventTypeColors}
             />
           </>
         ) : null}
       </div>
 
       {selectedOccurrence ? (
-        <EventDetailsModal occurrence={selectedOccurrence} onClose={() => setSelectedOccurrence(null)} />
+        <EventDetailsModal occurrence={selectedOccurrence} onClose={() => setSelectedOccurrenceRef(null)} />
       ) : null}
     </section>
   );

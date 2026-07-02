@@ -7,6 +7,7 @@ import { useData } from '../lib/DataContext';
 import { Plus } from 'lucide-react';
 import { computeDurationMinutes, mapCalendarEventToSessionType } from '../lib/calendarLogSession';
 import { isBuiltInActivityEventType } from '../lib/calendar/events';
+import { resolveCalendarEventColorOverride } from '../lib/calendar/colorOverrides';
 
 interface RenderedEvent {
   event: CalendarEvent;
@@ -116,7 +117,7 @@ function computeOverlapGroups(events: RenderedEvent[], maxCols: number): Map<str
 }
 
 export function CalendarWeek({ currentDate, onAddEvent, onEditEvent, onEventLongPress }: CalendarWeekProps) {
-  const { calendarEvents, customEventTypes, trainingLogs } = useData();
+  const { calendarEvents, calendarEventColorOverrides, customEventTypes, trainingLogs } = useData();
   const scheduleRef = useRef<HTMLDivElement>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
@@ -265,7 +266,7 @@ export function CalendarWeek({ currentDate, onAddEvent, onEditEvent, onEventLong
           endHour: finalParsedEnd.hour,
           endMinute: finalParsedEnd.minute,
           title: finalTitle,
-          color: event.color || getTypeColor(finalEventTypeId),
+          color: resolveCalendarEventColorOverride(event, finalEventTypeId, calendarEventColorOverrides) || event.color || getTypeColor(finalEventTypeId),
         });
       }
     });

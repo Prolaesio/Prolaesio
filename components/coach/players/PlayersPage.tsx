@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { useCoachTeam } from '@/lib/coach/selectedTeam';
+import { useData } from '@/lib/DataContext';
+import { usePersistedState } from '@/lib/usePersistedState';
 import { PlayerAnalyticsChart } from '@/components/coach/players/PlayerAnalyticsChart';
 import { PlayerAnalyticsLegend } from '@/components/coach/players/PlayerAnalyticsLegend';
 import { IndividualEventCreator } from '@/components/coach/players/IndividualEventCreator';
@@ -230,13 +232,15 @@ function DailyWellnessStatusStrip({
 function CalendarView({
   playerDataset,
   onEventCreated,
+  eventTypeColors,
 }: {
   playerDataset: TeamPlayerDataset;
   onEventCreated: () => void;
+  eventTypeColors: Record<string, string>;
 }) {
   return (
     <>
-      <PlayerCalendar events={playerDataset.calendarEvents} className="xl:h-[760px]" />
+      <PlayerCalendar events={playerDataset.calendarEvents} eventTypeColors={eventTypeColors} className="xl:h-[760px]" />
       <IndividualEventCreator
         playerId={playerDataset.player.id}
         playerName={playerDataset.player.name}
@@ -249,12 +253,17 @@ function CalendarView({
 
 export function PlayersPage() {
   const { selectedTeam } = useCoachTeam();
-  const [viewMode, setViewMode] = useState<PlayerViewMode>('analytics');
+  const { customEventTypes } = useData();
+  const [viewMode, setViewMode] = usePersistedState<PlayerViewMode>('lodario:coach-players:view', 'analytics');
   const [teamPlayers, setTeamPlayers] = useState<TeamPlayerDataset[]>([]);
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(false);
   const [playersError, setPlayersError] = useState<string | null>(null);
-  const [selectedPlayerId, setSelectedPlayerId] = useState<string>(() => teamPlayers[0]?.player.id ?? '');
+  const [selectedPlayerId, setSelectedPlayerId] = usePersistedState<string>('lodario:coach-players:selected-player', '');
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const eventTypeColors = useMemo(
+    () => Object.fromEntries(customEventTypes.map((type) => [type.id, type.color])),
+    [customEventTypes]
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -296,7 +305,7 @@ export function PlayersPage() {
     if (!selectedPlayerStillExists) {
       setSelectedPlayerId(teamPlayers[0]?.player.id ?? '');
     }
-  }, [selectedPlayerId, teamPlayers]);
+  }, [selectedPlayerId, setSelectedPlayerId, teamPlayers]);
 
   const selectedPlayerDataset = useMemo(() => {
     return teamPlayers.find((dataset) => dataset.player.id === selectedPlayerId) ?? teamPlayers[0];
@@ -404,6 +413,7 @@ export function PlayersPage() {
           <CalendarView
             playerDataset={selectedPlayerDataset}
             onEventCreated={() => setRefreshVersion((version) => version + 1)}
+            eventTypeColors={eventTypeColors}
           />
         )}
       </div>

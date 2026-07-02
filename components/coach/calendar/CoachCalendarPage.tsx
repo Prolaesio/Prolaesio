@@ -2,6 +2,7 @@
 
 import { parseISO } from 'date-fns';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, Plus, Pencil, Trash2 } from 'lucide-react';
 import { TeamAveragesPanel } from '@/components/coach/calendar/TeamAveragesPanel';
 import { TeamCalendar } from '@/components/coach/calendar/TeamCalendar';
 import type {
@@ -19,6 +20,8 @@ import { withCoachCalendarMeta } from '@/lib/calendar/events';
 import { useCoachTeam } from '@/lib/coach/selectedTeam';
 import { useCoachSelectedTeamInsights } from '@/lib/coach/teamInsights';
 import { supabase } from '@/lib/supabase';
+import { useData } from '@/lib/DataContext';
+import { usePersistedState } from '@/lib/usePersistedState';
 
 interface TeamPlayerOption {
   id: string;
@@ -45,8 +48,15 @@ interface CalendarFormState {
 }
 
 const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const activityTypes = new Set<TeamEventType>(['training', 'game', 'gym', 'recovery', 'solo']);
-const eventTypeOptions: TeamEventType[] = ['training', 'game', 'gym', 'recovery', 'solo', 'meeting', 'other'];
+const defaultCoachEventTypes = [
+  { id: 'training', name: 'Training', color: '#22c55e', isActivity: true },
+  { id: 'game', name: 'Game', color: '#ff6b6b', isActivity: true },
+  { id: 'gym', name: 'Gym', color: '#845ef7', isActivity: true },
+  { id: 'recovery', name: 'Recovery', color: '#38bdf8', isActivity: true },
+  { id: 'solo', name: 'Solo', color: '#ffd43b', isActivity: true },
+  { id: 'meeting', name: 'Meeting', color: '#adb5bd', isActivity: false },
+  { id: 'other', name: 'Other', color: '#adb5bd', isActivity: false },
+] as const;
 
 function isMissingCalendarDescriptionError(error: { message?: string | null; details?: string | null } | null | undefined): boolean {
   const message = `${error?.message ?? ''} ${error?.details ?? ''}`.toLowerCase();
@@ -106,10 +116,7 @@ function createDefaultForm(players: TeamPlayerOption[], selectedDate = getTodayD
 }
 
 function toTeamEventType(value: string | undefined): TeamEventType {
-  if (value === 'training' || value === 'game' || value === 'gym' || value === 'recovery' || value === 'solo' || value === 'meeting') {
-    return value;
-  }
-  return 'other';
+  return value || 'other';
 }
 
 function formFromItem(item: TeamCalendarItem, players: TeamPlayerOption[], instanceDate?: string): CalendarFormState {
@@ -138,13 +145,14 @@ function formFromItem(item: TeamCalendarItem, players: TeamPlayerOption[], insta
 
 export function CoachCalendarPage() {
   const { user } = useAuth();
+  const { customEventTypes, saveCustomEventType, deleteCustomEventType } = useData();
   const { selectedTeam } = useCoachTeam();
   const { players, calendarData: teamData, isLoading, error, reload } = useCoachSelectedTeamInsights(selectedTeam.id);
   const hasCalendarData = teamData.items.length > 0 || teamData.averages.length > 0;
   const teamAveragesContainerRef = useRef<HTMLDivElement>(null);
   const [desktopScheduleHeight, setDesktopScheduleHeight] = useState<number | null>(null);
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [selectedInstanceDate, setSelectedInstanceDate] = useState<string | undefined>(undefined);
+  const [selectedItemId, setSelectedItemId] = usePersistedState<string | null>('lodario:coach-calendar:selected-item', null);
+  const [selectedInstanceDate, setSelectedInstanceDate] = usePersistedState<string | undefined>('lodario:coach-calendar:selected-instance', undefined);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -157,6 +165,96 @@ export function CoachCalendarPage() {
     [teamData.items, selectedItemId]
   );
   const [form, setForm] = useState<CalendarFormState>(() => createDefaultForm([]));
+  const [newTypeName, setNewTypeName] = useState('');
+  const [newTypeColor, setNewTypeColor] = useState('#845ef7');
+  const [newTypeIsActivity, setNewTypeIsActivity] = useState(true);
+  const [isCreatingNewType, setIsCreatingNewType] = useState(false);
+  const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
+  const [actionTypeId, setActionTypeId] = useState<string | null>(null);
+  const typeTimerRef = useRef<number | null>(null);
+  const typeLongPressTriggeredRef = useRef(false);
+
+  const coachEventTypes = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; color: string; isActivity: boolean; isBuiltIn: boolean }>(
+      defaultCoachEventTypes.map((type) => [type.id, { ...type, isBuiltIn: true }])
+    );
+    customEventTypes.forEach((type) => {
+      map.set(type.id, {
+        id: type.id,
+        name: type.name,
+        color: type.color,
+        isActivity: type.isActivity ?? false,
+        isBuiltIn: type.isBuiltIn ?? false,
+      });
+    });
+    return Array.from(map.values());
+  }, [customEventTypes]);
+  const eventTypeColors = useMemo(
+    () => Object.fromEntries(coachEventTypes.map((type) => [type.id, type.color])),
+    [coachEventTypes]
+  );
+  const activityTypes = useMemo(
+    () => new Set(coachEventTypes.filter((type) => type.isActivity).map((type) => type.id)),
+    [coachEventTypes]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (typeTimerRef.current !== null) window.clearTimeout(typeTimerRef.current);
+    };
+  }, []);
+
+  const clearTypeTimer = () => {
+    if (typeTimerRef.current !== null) {
+      window.clearTimeout(typeTimerRef.current);
+      typeTimerRef.current = null;
+    }
+  };
+
+  const startTypeTimer = (typeId: string) => {
+    clearTypeTimer();
+    typeLongPressTriggeredRef.current = false;
+    typeTimerRef.current = window.setTimeout(() => {
+      typeLongPressTriggeredRef.current = true;
+      setActionTypeId(typeId);
+    }, 600);
+  };
+
+  const handleTypeClick = (typeId: string) => {
+    if (typeLongPressTriggeredRef.current) {
+      typeLongPressTriggeredRef.current = false;
+      return;
+    }
+    setForm((previous) => ({ ...previous, eventType: typeId }));
+  };
+
+  const resetTypeEditor = () => {
+    setIsCreatingNewType(false);
+    setEditingTypeId(null);
+    setNewTypeName('');
+    setNewTypeColor('#845ef7');
+    setNewTypeIsActivity(true);
+  };
+
+  const startCreateType = () => {
+    setActionTypeId(null);
+    setEditingTypeId(null);
+    setNewTypeName('');
+    setNewTypeColor('#845ef7');
+    setNewTypeIsActivity(true);
+    setIsCreatingNewType(true);
+  };
+
+  const startEditType = (typeId: string) => {
+    const type = coachEventTypes.find((candidate) => candidate.id === typeId);
+    if (!type) return;
+    setActionTypeId(null);
+    setEditingTypeId(type.id);
+    setNewTypeName(type.name);
+    setNewTypeColor(type.color);
+    setNewTypeIsActivity(type.isActivity);
+    setIsCreatingNewType(true);
+  };
 
   useEffect(() => {
     const averagesContainer = teamAveragesContainerRef.current;
@@ -422,6 +520,36 @@ export function CoachCalendarPage() {
     reload();
   };
 
+  const saveEventType = () => {
+    const trimmedName = newTypeName.trim();
+    if (!trimmedName) return;
+    const existingType = editingTypeId ? coachEventTypes.find((type) => type.id === editingTypeId) : undefined;
+    const id = editingTypeId ||
+      (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `coach-type-${Date.now()}`);
+    saveCustomEventType({
+      id,
+      name: trimmedName,
+      color: newTypeColor,
+      isBuiltIn: existingType?.isBuiltIn ?? false,
+      isActivity: newTypeIsActivity,
+    });
+    setForm((previous) => ({ ...previous, eventType: id }));
+    resetTypeEditor();
+  };
+
+  const deleteEventType = (typeId: string) => {
+    deleteCustomEventType(typeId);
+    setActionTypeId(null);
+    if (editingTypeId === typeId) {
+      resetTypeEditor();
+    }
+    if (form.eventType === typeId) {
+      setForm((previous) => ({ ...previous, eventType: coachEventTypes.find((type) => type.id !== typeId)?.id ?? 'other' }));
+    }
+  };
+
   if (!selectedTeam.id) {
     return (
       <div className="mx-auto w-full max-w-7xl space-y-6">
@@ -454,6 +582,7 @@ export function CoachCalendarPage() {
         </div>
         <TeamCalendar
           items={teamData.items}
+          eventTypeColors={eventTypeColors}
           selectedItemId={selectedItemId}
           onSelectItem={handleSelectItem}
           onSelectEmptySlot={handleSelectSlot}
@@ -496,22 +625,126 @@ export function CoachCalendarPage() {
 
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Event Type</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {eventTypeOptions.map((type) => (
+              {!isCreatingNewType ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {coachEventTypes.map((type) => (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => handleTypeClick(type.id)}
+                      onPointerDown={() => startTypeTimer(type.id)}
+                      onPointerUp={clearTypeTimer}
+                      onPointerLeave={clearTypeTimer}
+                      onPointerCancel={clearTypeTimer}
+                      onContextMenu={(event) => event.preventDefault()}
+                      className={`rounded-lg px-3 py-2 text-xs font-bold transition-all border ${
+                        form.eventType === type.id
+                          ? 'border-transparent text-black'
+                          : 'border-[rgba(255,255,255,0.1)] text-gray-300'
+                      }`}
+                      style={form.eventType === type.id ? { backgroundColor: type.color } : undefined}
+                    >
+                      {type.name}
+                    </button>
+                  ))}
                   <button
-                    key={type}
                     type="button"
-                    onClick={() => setForm((previous) => ({ ...previous, eventType: type }))}
-                    className={`rounded-lg px-3 py-2 text-xs font-semibold capitalize transition-colors ${
-                      form.eventType === type
-                        ? 'bg-[var(--accent-secondary)] text-white'
-                        : 'border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.05)] text-gray-300 hover:text-white'
-                    }`}
+                    onClick={startCreateType}
+                    className="px-3 py-2 rounded-lg text-xs font-bold transition-all border border-dashed border-[rgba(255,255,255,0.3)] text-gray-300 flex items-center"
                   >
-                    {type}
+                    <Plus size={14} className="mr-1" /> New
                   </button>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <div className="mt-2 p-3 bg-[rgba(255,255,255,0.05)] rounded-xl border border-[var(--accent-secondary)] animate-fade-in">
+                  <input
+                    type="text"
+                    value={newTypeName}
+                    onChange={(event) => setNewTypeName(event.target.value)}
+                    placeholder="Custom Type Name"
+                    className="w-full bg-transparent border-b border-[rgba(255,255,255,0.1)] pb-2 mb-3 text-white text-sm focus:outline-none"
+                  />
+
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-semibold text-gray-200">Activity Event</span>
+                      <span className="text-[10px] text-gray-500">Adds an anticipated intensity</span>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={newTypeIsActivity}
+                      onClick={() => setNewTypeIsActivity((value) => !value)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                        newTypeIsActivity ? 'bg-[var(--accent-primary)]' : 'bg-gray-600'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          newTypeIsActivity ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center space-x-3">
+                    <span className="text-xs text-gray-400">Color:</span>
+                    <input
+                      type="color"
+                      value={newTypeColor}
+                      onChange={(event) => setNewTypeColor(event.target.value)}
+                      className="w-8 h-8 rounded cursor-pointer border-0 p-0 bg-transparent"
+                    />
+                    <div className="flex-1"></div>
+                    <button
+                      type="button"
+                      onClick={saveEventType}
+                      disabled={!newTypeName.trim()}
+                      className="text-xs font-bold text-black bg-[var(--accent-primary)] hover:bg-[var(--accent-secondary)] disabled:opacity-40 disabled:cursor-not-allowed px-3 py-1.5 rounded-lg flex items-center transition-colors"
+                    >
+                      <Check size={12} className="mr-1" /> Save Type
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetTypeEditor}
+                      className="text-xs text-gray-400 hover:text-white px-2 py-1"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {actionTypeId ? (
+                <div className="mt-3 p-3 rounded-xl bg-[rgba(255,107,107,0.1)] border border-[rgba(255,107,107,0.3)] animate-fade-in">
+                  <p className="text-xs text-gray-200 mb-3">
+                    Manage <span className="font-bold text-white">&ldquo;{coachEventTypes.find((type) => type.id === actionTypeId)?.name}&rdquo;</span>
+                  </p>
+                  <div className="flex space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => startEditType(actionTypeId)}
+                      className="flex-1 py-2 rounded-lg text-xs font-bold bg-[rgba(255,255,255,0.08)] text-white flex items-center justify-center transition-transform active:scale-95"
+                    >
+                      <Pencil size={14} className="mr-1.5" /> Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteEventType(actionTypeId)}
+                      className="flex-1 py-2 rounded-lg text-xs font-bold bg-[#ff6b6b] text-white flex items-center justify-center transition-transform active:scale-95"
+                    >
+                      <Trash2 size={14} className="mr-1.5" /> Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActionTypeId(null)}
+                      className="px-4 py-2 rounded-lg text-xs font-medium text-gray-400 bg-[rgba(255,255,255,0.05)] hover:text-white"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             {activityTypes.has(form.eventType) ? (

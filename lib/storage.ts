@@ -4,6 +4,7 @@ import {
   WellnessLog,
   TrainingLog,
   CalendarEvent,
+  CalendarEventColorOverride,
   CustomEventType,
   InjuryRecord,
 } from './types';
@@ -33,6 +34,14 @@ export class StorageService {
     }
 
     return published === false;
+  }
+
+  private static isMissingColorOverrideTableError(error: { message?: string | null; details?: string | null } | null | undefined): boolean {
+    const message = `${error?.message ?? ''} ${error?.details ?? ''}`.toLowerCase();
+    return message.includes('player_calendar_event_color_overrides') && (
+      message.includes('does not exist') ||
+      message.includes('could not find')
+    );
   }
 
   // --- Profile ---
@@ -276,6 +285,93 @@ export class StorageService {
       .eq('id', eventId);
 
     if (error) console.error('Error deleting calendar event:', error);
+  }
+
+  // --- Player calendar color overrides ---
+  static async getCalendarEventColorOverrides(): Promise<CalendarEventColorOverride[]> {
+    const { data, error } = await supabase
+      .from('player_calendar_event_color_overrides')
+      .select('id, scope, event_id, event_type_id, coach_id, color');
+
+    if (error) {
+      if (!StorageService.isMissingColorOverrideTableError(error)) {
+        console.error('Error loading calendar event color overrides:', error);
+      }
+      return [];
+    }
+
+    return (data ?? []).map((row: any) => ({
+      id: row.id,
+      scope: row.scope,
+      eventId: row.event_id ?? undefined,
+      eventTypeId: row.event_type_id ?? undefined,
+      coachId: row.coach_id ?? undefined,
+      color: row.color,
+    }));
+  }
+
+  static async saveCalendarEventColorOverride(override: CalendarEventColorOverride): Promise<CalendarEventColorOverride | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const payload = {
+      user_id: user.id,
+      scope: override.scope,
+      event_id: override.scope === 'event' ? override.eventId : null,
+      event_type_id: override.scope === 'event_type' ? override.eventTypeId : null,
+      coach_id: override.coachId ?? null,
+      color: override.color,
+    };
+
+    let query = supabase
+      .from('player_calendar_event_color_overrides')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('scope', override.scope);
+
+    if (override.scope === 'event') {
+      query = query.eq('event_id', override.eventId);
+    } else if (override.scope === 'event_type') {
+      query = query.eq('coach_id', override.coachId).eq('event_type_id', override.eventTypeId);
+    } else {
+      query = query.eq('coach_id', override.coachId);
+    }
+
+    const existing = await query.maybeSingle();
+    if (existing.error && !StorageService.isMissingColorOverrideTableError(existing.error)) {
+      console.error('Error finding calendar event color override:', existing.error);
+      return null;
+    }
+
+    const mutation = existing.data?.id
+      ? supabase
+          .from('player_calendar_event_color_overrides')
+          .update(payload)
+          .eq('id', existing.data.id)
+          .select('id, scope, event_id, event_type_id, coach_id, color')
+          .single()
+      : supabase
+          .from('player_calendar_event_color_overrides')
+          .insert(payload)
+          .select('id, scope, event_id, event_type_id, coach_id, color')
+          .single();
+
+    const { data, error } = await mutation;
+    if (error) {
+      if (!StorageService.isMissingColorOverrideTableError(error)) {
+        console.error('Error saving calendar event color override:', error);
+      }
+      return null;
+    }
+
+    return {
+      id: data.id,
+      scope: data.scope,
+      eventId: data.event_id ?? undefined,
+      eventTypeId: data.event_type_id ?? undefined,
+      coachId: data.coach_id ?? undefined,
+      color: data.color,
+    };
   }
 
   // --- Custom Event Types ---

@@ -3,13 +3,14 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { StorageService } from './storage';
 import { useAuth } from './AuthContext';
-import { UserProfile, WellnessLog, TrainingLog, CalendarEvent, CustomEventType, InjuryRecord } from './types';
+import { UserProfile, WellnessLog, TrainingLog, CalendarEvent, CalendarEventColorOverride, CustomEventType, InjuryRecord } from './types';
 
 interface DataContextType {
   profile: UserProfile | null;
   wellnessLogs: Record<string, WellnessLog>;
   trainingLogs: TrainingLog[];
   calendarEvents: CalendarEvent[];
+  calendarEventColorOverrides: CalendarEventColorOverride[];
   customEventTypes: CustomEventType[];
   injuries: InjuryRecord[];
   
@@ -19,6 +20,7 @@ interface DataContextType {
   deleteTrainingLog: (logId: string) => void;
   saveCalendarEvent: (event: CalendarEvent) => void;
   deleteCalendarEvent: (eventId: string) => void;
+  saveCalendarEventColorOverride: (override: CalendarEventColorOverride) => void;
   saveCustomEventType: (type: CustomEventType) => void;
   deleteCustomEventType: (typeId: string) => void;
   saveInjury: (injury: InjuryRecord) => void;
@@ -30,6 +32,7 @@ const defaultContext: DataContextType = {
   wellnessLogs: {},
   trainingLogs: [],
   calendarEvents: [],
+  calendarEventColorOverrides: [],
   customEventTypes: [],
   injuries: [],
   saveProfile: () => {},
@@ -38,6 +41,7 @@ const defaultContext: DataContextType = {
   deleteTrainingLog: () => {},
   saveCalendarEvent: () => {},
   deleteCalendarEvent: () => {},
+  saveCalendarEventColorOverride: () => {},
   saveCustomEventType: () => {},
   deleteCustomEventType: () => {},
   saveInjury: () => {},
@@ -51,11 +55,12 @@ export const useData = () => useContext(DataContext);
 export const DataProvider = ({ children }: { children: ReactNode }) => {
   const { user } = useAuth();
 
-  const [data, setData] = useState<Omit<DataContextType, 'saveProfile' | 'saveWellnessLog' | 'saveTrainingLog' | 'deleteTrainingLog' | 'saveCalendarEvent' | 'deleteCalendarEvent' | 'saveCustomEventType' | 'deleteCustomEventType' | 'saveInjury'>>({
+  const [data, setData] = useState<Omit<DataContextType, 'saveProfile' | 'saveWellnessLog' | 'saveTrainingLog' | 'deleteTrainingLog' | 'saveCalendarEvent' | 'deleteCalendarEvent' | 'saveCalendarEventColorOverride' | 'saveCustomEventType' | 'deleteCustomEventType' | 'saveInjury'>>({
     profile: null,
     wellnessLogs: {},
     trainingLogs: [],
     calendarEvents: [],
+    calendarEventColorOverrides: [],
     customEventTypes: [],
     injuries: [],
     isLoading: true,
@@ -69,6 +74,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         wellnessLogs: {},
         trainingLogs: [],
         calendarEvents: [],
+        calendarEventColorOverrides: [],
         customEventTypes: [],
         injuries: [],
         isLoading: false,
@@ -79,11 +85,12 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     const loadData = async () => {
       setData(prev => ({ ...prev, isLoading: true }));
 
-      const [profile, wellnessLogs, trainingLogs, calendarEvents, customEventTypes, injuries] = await Promise.all([
+      const [profile, wellnessLogs, trainingLogs, calendarEvents, calendarEventColorOverrides, customEventTypes, injuries] = await Promise.all([
         StorageService.getProfile(),
         StorageService.getWellnessLogs(),
         StorageService.getTrainingLogs(),
         StorageService.getCalendarEvents(),
+        StorageService.getCalendarEventColorOverrides(),
         StorageService.getCustomEventTypes(),
         StorageService.getInjuries(),
       ]);
@@ -93,6 +100,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         wellnessLogs,
         trainingLogs,
         calendarEvents,
+        calendarEventColorOverrides,
         customEventTypes,
         injuries,
         isLoading: false,
@@ -153,6 +161,26 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     }));
   }, []);
 
+  const saveCalendarEventColorOverride = useCallback((override: CalendarEventColorOverride) => {
+    StorageService.saveCalendarEventColorOverride(override).then((savedOverride) => {
+      if (!savedOverride) return;
+      setData((prev) => {
+        const overrides = [...prev.calendarEventColorOverrides];
+        const index = overrides.findIndex((candidate) => {
+          if (savedOverride.scope !== candidate.scope) return false;
+          if (savedOverride.scope === 'event') return savedOverride.eventId === candidate.eventId;
+          if (savedOverride.scope === 'event_type') {
+            return savedOverride.coachId === candidate.coachId && savedOverride.eventTypeId === candidate.eventTypeId;
+          }
+          return savedOverride.coachId === candidate.coachId;
+        });
+        if (index >= 0) overrides[index] = savedOverride;
+        else overrides.push(savedOverride);
+        return { ...prev, calendarEventColorOverrides: overrides };
+      });
+    });
+  }, []);
+
   const saveCustomEventType = useCallback((type: CustomEventType) => {
     StorageService.saveCustomEventType(type);
     setData((prev) => {
@@ -193,6 +221,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         deleteTrainingLog,
         saveCalendarEvent,
         deleteCalendarEvent,
+        saveCalendarEventColorOverride,
         saveCustomEventType,
         deleteCustomEventType,
         saveInjury,
