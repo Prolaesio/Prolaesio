@@ -51,6 +51,8 @@ const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const defaultCoachEventTypes = [
   { id: 'training', name: 'Training', color: '#22c55e', isActivity: true },
   { id: 'game', name: 'Game', color: '#ff6b6b', isActivity: true },
+  { id: 'cardio', name: 'Cardio', color: '#38bdf8', isActivity: true },
+  { id: 'hiit', name: 'HIIT', color: '#f97316', isActivity: true },
   { id: 'gym', name: 'Gym', color: '#845ef7', isActivity: true },
   { id: 'recovery', name: 'Recovery', color: '#38bdf8', isActivity: true },
   { id: 'solo', name: 'Solo', color: '#ffd43b', isActivity: true },

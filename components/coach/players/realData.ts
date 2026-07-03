@@ -258,6 +258,8 @@ function asObject(value: unknown): Record<string, unknown> | null {
 function mapEventTypeIdToPlayerSessionType(rawType: string): PlayerSessionType {
   const normalized = rawType.trim().toLowerCase();
   if (normalized.includes('match') || normalized.includes('game')) return 'game';
+  if (normalized.includes('hiit') || normalized.includes('interval') || normalized.includes('conditioning')) return 'hiit';
+  if (normalized.includes('cardio') || normalized.includes('run') || normalized.includes('cycle') || normalized.includes('bike')) return 'cardio';
   if (normalized.includes('train')) return 'training';
   if (normalized.includes('recover')) return 'recovery';
   if (normalized.includes('gym') || normalized.includes('lift')) return 'gym';
@@ -430,6 +432,8 @@ function toSessionType(value: string): TrainingLog['sessionType'] {
   if (normalized === 'gym') return 'Gym';
   if (normalized === 'solo') return 'Solo';
   if (normalized === 'partner') return 'Partner';
+  if (normalized === 'cardio') return 'Cardio';
+  if (normalized === 'hiit') return 'HIIT';
   return 'Other';
 }
 

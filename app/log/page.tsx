@@ -7,9 +7,9 @@ import { useData } from '@/lib/DataContext';
 import { format, subDays, addDays, parseISO, isValid } from 'date-fns';
 import { ChevronLeft, ChevronRight, CheckCircle2, Heart, Dumbbell, Moon, Zap, Activity, MoreVertical, Pencil, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import { SessionType, TrainingLog } from '@/lib/types';
+import { SESSION_TYPES, SessionType, TrainingLog } from '@/lib/types';
 
-const sessionTypeSet = new Set<SessionType>(['Solo', 'Partner', 'Team', 'Match', 'Gym', 'Other']);
+const sessionTypeSet = new Set<SessionType>(SESSION_TYPES);
 
 export default function LogPage() {
   const [expandedForm, setExpandedForm] = useState<'wellness' | 'training' | null>(null);

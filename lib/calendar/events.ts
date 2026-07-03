@@ -44,6 +44,8 @@ const builtInActivityEventTypeIds = new Set([
   'team-training',
   'match',
   'personal-training',
+  'cardio',
+  'hiit',
   'gym',
 ]);
 

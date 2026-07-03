@@ -26,6 +26,8 @@ const SESSION_TYPE_MULTIPLIER: Record<SessionType, number> = {
   Gym: 1,
   Solo: 0.95,
   Partner: 0.95,
+  Cardio: 0.95,
+  HIIT: 1.15,
   Other: 1,
 };
 

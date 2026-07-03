@@ -381,6 +381,8 @@ export class StorageService {
       { id: 'team-training', name: 'Team Training', color: '#22c55e', icon: 'Users', isBuiltIn: true, isActivity: true },
       { id: 'match', name: 'Match', color: '#ff6b6b', icon: 'Trophy', isBuiltIn: true, isActivity: true },
       { id: 'personal-training', name: 'Personal Training', color: '#ffd43b', icon: 'Activity', isBuiltIn: true, isActivity: true },
+      { id: 'cardio', name: 'Cardio', color: '#38bdf8', icon: 'Activity', isBuiltIn: true, isActivity: true },
+      { id: 'hiit', name: 'HIIT', color: '#f97316', icon: 'Zap', isBuiltIn: true, isActivity: true },
       { id: 'gym', name: 'Gym', color: '#845ef7', icon: 'Dumbbell', isBuiltIn: true, isActivity: true },
       { id: 'other', name: 'Other', color: '#adb5bd', icon: 'Calendar', isBuiltIn: true, isActivity: false },
     ];
@@ -446,6 +448,8 @@ export class StorageService {
     'team-training',
     'match',
     'personal-training',
+    'cardio',
+    'hiit',
     'gym',
     'other',
   ]);

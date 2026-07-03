@@ -13,6 +13,8 @@ export function mapCalendarEventToSessionType(
   const haystack = `${eventTypeId} ${eventTypeName} ${fallbackText || ''}`.toLowerCase();
 
   if (containsAny(haystack, ['match', 'game', 'fixture'])) return 'Match';
+  if (containsAny(haystack, ['hiit', 'interval', 'conditioning', 'shuttle', 'hill sprint', 'sprint block'])) return 'HIIT';
+  if (containsAny(haystack, ['cardio', 'run', 'running', 'cycle', 'cycling', 'bike', 'recovery run', 'long run'])) return 'Cardio';
   if (containsAny(haystack, ['gym', 'strength', 'weights'])) return 'Gym';
   if (containsAny(haystack, ['team', 'squad'])) return 'Team';
   if (containsAny(haystack, ['partner', 'duo'])) return 'Partner';

@@ -120,7 +120,7 @@ function computeOverlapGroups(events: ParsedEvent[], maxCols: number): Map<strin
 
 function getEventColor(type: PlayerCalendarEvent['type'], eventTypeId: string | undefined, eventTypeColors: Record<string, string>) {
   if (eventTypeId && eventTypeColors[eventTypeId]) return eventTypeColors[eventTypeId];
-  if (type === 'training' || type === 'game' || type === 'gym') {
+  if (type === 'training' || type === 'game' || type === 'cardio' || type === 'hiit' || type === 'gym') {
     return 'var(--accent-primary)';
   }
   return 'var(--accent-secondary)';

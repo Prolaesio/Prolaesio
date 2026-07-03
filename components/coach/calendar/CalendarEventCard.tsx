@@ -6,7 +6,7 @@ interface CalendarEventCardProps {
 }
 
 function getItemColor(item: TeamCalendarItem) {
-  if (item.type === 'training' || item.type === 'game' || item.type === 'gym') {
+  if (item.type === 'training' || item.type === 'game' || item.type === 'cardio' || item.type === 'hiit' || item.type === 'gym') {
     return 'var(--accent-primary)';
   }
   return 'var(--accent-secondary)';

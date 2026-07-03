@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useData } from '../lib/DataContext';
 import { Slider } from './ui/Slider';
 import { Toggle } from './ui/Toggle';
-import { TrainingLog, SessionType, SprintingOption } from '../lib/types';
+import { TrainingLog, SESSION_TYPES, SessionType, SprintingOption } from '../lib/types';
 import { v4 as uuidv4 } from 'uuid';
 
 interface TrainingFormProps {
@@ -16,7 +16,7 @@ interface TrainingFormProps {
 export function TrainingForm({ onSaved, selectedDate, initialValues }: TrainingFormProps) {
   const { saveTrainingLog } = useData();
 
-  const sessionTypes: SessionType[] = ['Solo', 'Partner', 'Team', 'Match', 'Gym', 'Other'];
+  const sessionTypes = SESSION_TYPES;
   const defaultPerformanceEnabled = (type: SessionType) => type === 'Team' || type === 'Match';
   const [sessionType, setSessionType] = useState<SessionType>(initialValues?.sessionType || 'Team');
   
@@ -107,7 +107,7 @@ export function TrainingForm({ onSaved, selectedDate, initialValues }: TrainingF
         <h3 className="text-[var(--accent-primary)] font-bold uppercase tracking-wider text-xs mb-4">Session Details</h3>
         
         <label className="block text-xs font-medium text-gray-400 mb-2">Type</label>
-        <div className="grid grid-cols-3 gap-2 mb-6 cursor-pointer">
+        <div className="grid grid-cols-4 gap-2 mb-6 cursor-pointer">
           {sessionTypes.map(type => (
             <div 
               key={type}

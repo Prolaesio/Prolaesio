@@ -138,7 +138,8 @@ export interface WellnessLog {
   notes?: string;
 }
 
-export type SessionType = 'Solo' | 'Partner' | 'Team' | 'Match' | 'Gym' | 'Other';
+export const SESSION_TYPES = ['Solo', 'Partner', 'Team', 'Match', 'Cardio', 'HIIT', 'Gym', 'Other'] as const;
+export type SessionType = (typeof SESSION_TYPES)[number];
 export type SprintingOption = 'no' | 'yes-90-95' | 'yes-100';
 
 export interface TrainingLog {
