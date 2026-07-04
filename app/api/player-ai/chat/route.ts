@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SupabaseClient } from '@supabase/supabase-js';
 
 import { createPlayerAiResponse } from '@/lib/ai/openai';
-import { isAiAssistantEnabled, resolvePlayerAiTier } from '@/lib/ai/model-config';
+import { isAiAssistantEnabled } from '@/lib/ai/model-config';
 import {
   normalizeConversationId,
   requirePlayerAiContext,
   UUID_PATTERN,
 } from '@/lib/ai/player-ai-auth';
+import { resolvePlayerAiTier } from '@/lib/ai/player-ai-tier';
 
 export const runtime = 'nodejs';
 
@@ -193,7 +194,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const tier = await resolvePlayerAiTier();
+  const tier = await resolvePlayerAiTier({ supabase, userId: user.id });
   const conversationResult = await getOrCreateConversation({
     supabase,
     userId: user.id,

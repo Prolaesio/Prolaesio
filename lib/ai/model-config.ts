@@ -45,9 +45,3 @@ export function getModelForPlayerTier(tier: PlayerAiTier): string {
   return config.free;
 }
 
-export async function resolvePlayerAiTier(): Promise<PlayerAiTier> {
-  // Subscription tiers are not implemented yet. Default every authenticated
-  // player to the free tier until a real entitlement source exists.
-  return 'free';
-}
-
