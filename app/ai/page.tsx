@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 
+import { AuthGate } from '@/components/AuthGate';
 import { useAuth } from '@/lib/AuthContext';
 
 type ChatRole = 'user' | 'assistant';
@@ -305,7 +306,10 @@ export default function PlayerAiPage() {
             message: errorMessage,
             rewardedAdBonus,
           });
-          setMessages(prev => [...prev, createMessage('assistant', errorMessage)]);
+          setMessages(prev => [
+            ...prev.filter(chatMessage => chatMessage.id !== userMessage.id),
+            createMessage('assistant', errorMessage),
+          ]);
           return;
         }
 
@@ -360,6 +364,7 @@ export default function PlayerAiPage() {
   const currentFavorite = activeConversation?.is_favorite ?? false;
 
   return (
+    <AuthGate requiredRole="player">
     <div className="relative flex h-[calc(100vh-5.75rem)] flex-col overflow-hidden bg-[var(--background)]">
       {isHistoryOpen && (
         <div className="absolute inset-0 z-30 bg-black/60 backdrop-blur-sm" onClick={() => setIsHistoryOpen(false)}>
@@ -616,5 +621,6 @@ export default function PlayerAiPage() {
         </div>
       </main>
     </div>
+    </AuthGate>
   );
 }
