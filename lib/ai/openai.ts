@@ -3,6 +3,10 @@ import 'server-only';
 import OpenAI from 'openai';
 
 import { getModelForPlayerTier, PlayerAiTier } from './model-config';
+import {
+  buildPlayerAiSafetyInstructions,
+  PlayerAiMessageRisk,
+} from './player-ai-safety';
 
 let openAiClient: OpenAI | null = null;
 
@@ -24,11 +28,6 @@ export const LODARIO_PLAYER_AI_SYSTEM_PROMPT = [
   'Use the provided Lodario player context when it is relevant to the player question.',
   'If context is missing or sparse, say the player has not logged enough data yet.',
   'Do not invent readiness scores, wellness entries, training logs, calendar events, pain notes, injuries, or profile details.',
-  'Do not diagnose injuries, illnesses, or medical conditions.',
-  'Do not give dangerous training advice or tell a player to push through pain.',
-  'Use conservative advice for pain, injury, unusual fatigue, soreness, low readiness, or poor sleep.',
-  'Use calm, practical, youth-athlete-safe wording.',
-  'Encourage the player to talk to a coach, parent, guardian, athletic trainer, doctor, or qualified professional when symptoms are concerning, worsening, or persistent.',
   'Keep answers concise, supportive, and specific. Say when there is not enough data to answer confidently.',
 ].join('\n');
 
@@ -49,12 +48,15 @@ export async function createPlayerAiResponse(params: {
   message: string;
   tier: PlayerAiTier;
   playerContext: string;
+  messageRisk: PlayerAiMessageRisk;
 }): Promise<PlayerAiResponse> {
   const modelUsed = getModelForPlayerTier(params.tier);
   const response = await getOpenAiClient().responses.create({
     model: modelUsed,
     instructions: [
       LODARIO_PLAYER_AI_SYSTEM_PROMPT,
+      '',
+      buildPlayerAiSafetyInstructions(params.messageRisk),
       '',
       'Lodario player context:',
       params.playerContext || 'No player context was available for this request.',

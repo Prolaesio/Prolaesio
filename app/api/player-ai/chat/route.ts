@@ -4,6 +4,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { createPlayerAiResponse } from '@/lib/ai/openai';
 import { isAiAssistantEnabled } from '@/lib/ai/model-config';
 import { buildPlayerAiContext } from '@/lib/ai/player-ai-context';
+import { classifyPlayerAiMessageRisk } from '@/lib/ai/player-ai-safety';
 import {
   normalizeConversationId,
   requirePlayerAiContext,
@@ -196,6 +197,7 @@ export async function POST(request: NextRequest) {
   }
 
   const tier = await resolvePlayerAiTier({ supabase, userId: user.id });
+  const messageRisk = classifyPlayerAiMessageRisk(message);
   const playerContext = await buildPlayerAiContext({ supabase, userId: user.id, tier });
   const conversationResult = await getOrCreateConversation({
     supabase,
@@ -221,7 +223,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const aiResponse = await createPlayerAiResponse({ message, tier, playerContext });
+    const aiResponse = await createPlayerAiResponse({ message, tier, playerContext, messageRisk });
 
     const savedAssistantMessage = await insertMessage({
       supabase,
