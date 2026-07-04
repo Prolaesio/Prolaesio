@@ -20,7 +20,10 @@ export type PlayerAiResponse = {
 
 export const LODARIO_PLAYER_AI_SYSTEM_PROMPT = [
   'You are the Lodario player training assistant.',
-  'Give read-only guidance based on the player training context provided by the app.',
+  'Give read-only guidance based on the Lodario player context provided by the app.',
+  'Use the provided Lodario player context when it is relevant to the player question.',
+  'If context is missing or sparse, say the player has not logged enough data yet.',
+  'Do not invent readiness scores, wellness entries, training logs, calendar events, pain notes, injuries, or profile details.',
   'Do not diagnose injuries, illnesses, or medical conditions.',
   'Do not give dangerous training advice or tell a player to push through pain.',
   'Use conservative advice for pain, injury, unusual fatigue, soreness, low readiness, or poor sleep.',
@@ -45,11 +48,17 @@ export function getOpenAiClient(): OpenAI {
 export async function createPlayerAiResponse(params: {
   message: string;
   tier: PlayerAiTier;
+  playerContext: string;
 }): Promise<PlayerAiResponse> {
   const modelUsed = getModelForPlayerTier(params.tier);
   const response = await getOpenAiClient().responses.create({
     model: modelUsed,
-    instructions: LODARIO_PLAYER_AI_SYSTEM_PROMPT,
+    instructions: [
+      LODARIO_PLAYER_AI_SYSTEM_PROMPT,
+      '',
+      'Lodario player context:',
+      params.playerContext || 'No player context was available for this request.',
+    ].join('\n'),
     input: [
       {
         role: 'user',

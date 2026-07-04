@@ -3,6 +3,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 
 import { createPlayerAiResponse } from '@/lib/ai/openai';
 import { isAiAssistantEnabled } from '@/lib/ai/model-config';
+import { buildPlayerAiContext } from '@/lib/ai/player-ai-context';
 import {
   normalizeConversationId,
   requirePlayerAiContext,
@@ -195,6 +196,7 @@ export async function POST(request: NextRequest) {
   }
 
   const tier = await resolvePlayerAiTier({ supabase, userId: user.id });
+  const playerContext = await buildPlayerAiContext({ supabase, userId: user.id, tier });
   const conversationResult = await getOrCreateConversation({
     supabase,
     userId: user.id,
@@ -219,7 +221,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const aiResponse = await createPlayerAiResponse({ message, tier });
+    const aiResponse = await createPlayerAiResponse({ message, tier, playerContext });
 
     const savedAssistantMessage = await insertMessage({
       supabase,
