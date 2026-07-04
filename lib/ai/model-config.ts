@@ -7,6 +7,7 @@ export type AiLimitConfig = {
   freeRewardedAdMessageBonus: number;
   lowDailyMessageLimit: number;
   highDailyMessageLimit: number;
+  highHardDailyLimit: number;
   maxMessageChars: number;
   maxOutputTokens: number;
 };
@@ -53,6 +54,10 @@ export function isGlobalAiAssistantDisabled(): boolean {
   return process.env.AI_GLOBAL_ASSISTANT_DISABLED === 'true';
 }
 
+export function isHighHardModelEnabled(): boolean {
+  return process.env.AI_HIGH_HARD_MODEL_ENABLED === 'true';
+}
+
 export function getAiModelConfig(): AiModelConfig {
   return {
     free: readRequiredEnv(REQUIRED_MODEL_ENV_VARS.free),
@@ -76,6 +81,7 @@ export function getAiLimitConfig(): AiLimitConfig {
     freeRewardedAdMessageBonus: readPositiveIntegerEnv('AI_FREE_REWARDED_AD_MESSAGE_BONUS', 10),
     lowDailyMessageLimit: readPositiveIntegerEnv('AI_LOW_DAILY_MESSAGE_LIMIT', 50),
     highDailyMessageLimit: readPositiveIntegerEnv('AI_HIGH_DAILY_MESSAGE_LIMIT', 100),
+    highHardDailyLimit: readPositiveIntegerEnv('AI_HIGH_HARD_DAILY_LIMIT', 5),
     maxMessageChars: readPositiveIntegerEnv('AI_MAX_MESSAGE_CHARS', 2000),
     maxOutputTokens: readPositiveIntegerEnv('AI_MAX_OUTPUT_TOKENS', 700),
   };

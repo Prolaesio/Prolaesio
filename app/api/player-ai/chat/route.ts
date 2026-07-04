@@ -15,6 +15,7 @@ import {
   requirePlayerAiContext,
   UUID_PATTERN,
 } from '@/lib/ai/player-ai-auth';
+import { resolvePlayerAiModelRoute } from '@/lib/ai/player-ai-routing';
 import { resolvePlayerAiTier } from '@/lib/ai/player-ai-tier';
 
 export const runtime = 'nodejs';
@@ -228,6 +229,13 @@ export async function POST(request: NextRequest) {
   }
 
   const messageRisk = classifyPlayerAiMessageRisk(message);
+  const modelRoute = await resolvePlayerAiModelRoute({
+    supabase,
+    userId: user.id,
+    tier,
+    message,
+    messageRisk,
+  });
   const playerContext = await buildPlayerAiContext({ supabase, userId: user.id, tier });
   const conversationResult = await getOrCreateConversation({
     supabase,
@@ -253,7 +261,13 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const aiResponse = await createPlayerAiResponse({ message, tier, playerContext, messageRisk });
+    const aiResponse = await createPlayerAiResponse({
+      message,
+      tier,
+      playerContext,
+      messageRisk,
+      model: modelRoute.model,
+    });
     const consumedMessage = await consumePlayerAiMessage({ supabase, userId: user.id, tier });
 
     if (!consumedMessage) {
@@ -309,6 +323,7 @@ export async function POST(request: NextRequest) {
       conversation_id: conversationResult.id,
       model_used: aiResponse.modelUsed,
       tier,
+      route: modelRoute.route,
     });
   } catch (error) {
     console.error('[player-ai] OpenAI response failed:', error);

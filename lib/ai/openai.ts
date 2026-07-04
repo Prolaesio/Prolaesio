@@ -2,7 +2,7 @@ import 'server-only';
 
 import OpenAI from 'openai';
 
-import { getAiLimitConfig, getModelForPlayerTier, PlayerAiTier } from './model-config';
+import { getAiLimitConfig, PlayerAiTier } from './model-config';
 import {
   buildPlayerAiSafetyInstructions,
   PlayerAiMessageRisk,
@@ -49,11 +49,11 @@ export async function createPlayerAiResponse(params: {
   tier: PlayerAiTier;
   playerContext: string;
   messageRisk: PlayerAiMessageRisk;
+  model: string;
 }): Promise<PlayerAiResponse> {
-  const modelUsed = getModelForPlayerTier(params.tier);
   const { maxOutputTokens } = getAiLimitConfig();
   const response = await getOpenAiClient().responses.create({
-    model: modelUsed,
+    model: params.model,
     max_output_tokens: maxOutputTokens,
     instructions: [
       LODARIO_PLAYER_AI_SYSTEM_PROMPT,
@@ -78,7 +78,7 @@ export async function createPlayerAiResponse(params: {
 
   return {
     content: response.output_text?.trim() ?? '',
-    modelUsed,
+    modelUsed: params.model,
     usage: {
       inputTokens: response.usage?.input_tokens ?? 0,
       outputTokens: response.usage?.output_tokens ?? 0,
