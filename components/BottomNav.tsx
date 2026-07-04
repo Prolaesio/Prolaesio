@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, PlusCircle, Calendar as CalendarIcon, BarChart2, User } from 'lucide-react';
+import { Home, PlusCircle, Calendar as CalendarIcon, BarChart2, User, Bot } from 'lucide-react';
 
 export function BottomNav() {
   const pathname = usePathname();
@@ -11,6 +11,7 @@ export function BottomNav() {
     { name: 'Home', path: '/', icon: Home },
     { name: 'Log', path: '/log', icon: PlusCircle },
     { name: 'Calendar', path: '/calendar', icon: CalendarIcon },
+    { name: 'AI', path: '/ai', icon: Bot },
     { name: 'Analytics', path: '/analytics', icon: BarChart2 },
     { name: 'Profile', path: '/profile', icon: User },
   ];
