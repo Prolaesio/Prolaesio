@@ -2,8 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SupabaseClient } from '@supabase/supabase-js';
 
 import { createPlayerAiResponse } from '@/lib/ai/openai';
-import { isAiAssistantEnabled } from '@/lib/ai/model-config';
+import {
+  getAiLimitConfig,
+  isAiAssistantEnabled,
+  isGlobalAiAssistantDisabled,
+} from '@/lib/ai/model-config';
 import { buildPlayerAiContext } from '@/lib/ai/player-ai-context';
+import { checkPlayerAiLimit, consumePlayerAiMessage } from '@/lib/ai/player-ai-limits';
 import { classifyPlayerAiMessageRisk } from '@/lib/ai/player-ai-safety';
 import {
   normalizeConversationId,
@@ -13,8 +18,6 @@ import {
 import { resolvePlayerAiTier } from '@/lib/ai/player-ai-tier';
 
 export const runtime = 'nodejs';
-
-const MAX_MESSAGE_LENGTH = 2000;
 
 type ChatPayload = {
   message?: unknown;
@@ -157,6 +160,13 @@ async function insertUsage(params: {
 }
 
 export async function POST(request: NextRequest) {
+  if (isGlobalAiAssistantDisabled()) {
+    return NextResponse.json(
+      { error: 'The Lodario Assistant is temporarily paused. Please try again soon.' },
+      { status: 503 }
+    );
+  }
+
   if (!isAiAssistantEnabled()) {
     return NextResponse.json({ error: 'Player AI assistant is disabled.' }, { status: 404 });
   }
@@ -184,19 +194,39 @@ export async function POST(request: NextRequest) {
 
   const message = typeof payload.message === 'string' ? payload.message.trim() : '';
   const conversationId = normalizeConversationId(payload.conversation_id);
+  const { maxMessageChars } = getAiLimitConfig();
 
   if (!message) {
     return NextResponse.json({ error: 'Message is required.' }, { status: 400 });
   }
 
-  if (message.length > MAX_MESSAGE_LENGTH) {
+  if (message.length > maxMessageChars) {
     return NextResponse.json(
-      { error: `Message must be ${MAX_MESSAGE_LENGTH} characters or fewer.` },
+      { error: `Message must be ${maxMessageChars} characters or fewer.` },
       { status: 400 }
     );
   }
 
   const tier = await resolvePlayerAiTier({ supabase, userId: user.id });
+  const limitStatus = await checkPlayerAiLimit({ supabase, userId: user.id, tier });
+
+  if (!limitStatus.allowed) {
+    return NextResponse.json(
+      {
+        error: limitStatus.error,
+        code: limitStatus.code,
+        tier: limitStatus.tier,
+        limit: limitStatus.limit,
+        used: limitStatus.used,
+        remaining: limitStatus.remaining,
+        rewarded_ad_credits: limitStatus.rewardedAdCredits,
+        rewarded_ad_bonus: limitStatus.rewardedAdBonus,
+        rewarded_ad_available: false,
+      },
+      { status: limitStatus.status }
+    );
+  }
+
   const messageRisk = classifyPlayerAiMessageRisk(message);
   const playerContext = await buildPlayerAiContext({ supabase, userId: user.id, tier });
   const conversationResult = await getOrCreateConversation({
@@ -224,6 +254,22 @@ export async function POST(request: NextRequest) {
 
   try {
     const aiResponse = await createPlayerAiResponse({ message, tier, playerContext, messageRisk });
+    const consumedMessage = await consumePlayerAiMessage({ supabase, userId: user.id, tier });
+
+    if (!consumedMessage) {
+      return NextResponse.json(
+        {
+          error:
+            tier === 'free'
+              ? 'You have used your free Lodario AI messages. Watch ad rewards for extra messages are coming soon.'
+              : 'Unable to confirm your AI message allowance right now.',
+          code: tier === 'free' ? 'free_limit_reached' : 'limit_check_failed',
+          tier,
+          rewarded_ad_available: false,
+        },
+        { status: tier === 'free' ? 429 : 503 }
+      );
+    }
 
     const savedAssistantMessage = await insertMessage({
       supabase,

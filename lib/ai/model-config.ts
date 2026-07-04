@@ -2,6 +2,15 @@ import 'server-only';
 
 export type PlayerAiTier = 'free' | 'low' | 'high';
 
+export type AiLimitConfig = {
+  freeLifetimeMessageLimit: number;
+  freeRewardedAdMessageBonus: number;
+  lowDailyMessageLimit: number;
+  highDailyMessageLimit: number;
+  maxMessageChars: number;
+  maxOutputTokens: number;
+};
+
 type AiModelConfig = {
   free: string;
   low: string;
@@ -24,8 +33,24 @@ function readRequiredEnv(name: string): string {
   return value;
 }
 
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+  const value = process.env[name]?.trim();
+  if (!value) return fallback;
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer.`);
+  }
+
+  return parsed;
+}
+
 export function isAiAssistantEnabled(): boolean {
-  return process.env.AI_ASSISTANT_ENABLED === 'true';
+  return process.env.AI_ASSISTANT_ENABLED === 'true' && !isGlobalAiAssistantDisabled();
+}
+
+export function isGlobalAiAssistantDisabled(): boolean {
+  return process.env.AI_GLOBAL_ASSISTANT_DISABLED === 'true';
 }
 
 export function getAiModelConfig(): AiModelConfig {
@@ -43,5 +68,16 @@ export function getModelForPlayerTier(tier: PlayerAiTier): string {
   if (tier === 'low') return config.low;
   if (tier === 'high') return config.highDefault;
   return config.free;
+}
+
+export function getAiLimitConfig(): AiLimitConfig {
+  return {
+    freeLifetimeMessageLimit: readPositiveIntegerEnv('AI_FREE_LIFETIME_MESSAGE_LIMIT', 10),
+    freeRewardedAdMessageBonus: readPositiveIntegerEnv('AI_FREE_REWARDED_AD_MESSAGE_BONUS', 10),
+    lowDailyMessageLimit: readPositiveIntegerEnv('AI_LOW_DAILY_MESSAGE_LIMIT', 50),
+    highDailyMessageLimit: readPositiveIntegerEnv('AI_HIGH_DAILY_MESSAGE_LIMIT', 100),
+    maxMessageChars: readPositiveIntegerEnv('AI_MAX_MESSAGE_CHARS', 2000),
+    maxOutputTokens: readPositiveIntegerEnv('AI_MAX_OUTPUT_TOKENS', 700),
+  };
 }
 

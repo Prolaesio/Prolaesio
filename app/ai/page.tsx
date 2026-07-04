@@ -36,6 +36,9 @@ type PlayerAiResponse = {
   conversation_id?: unknown;
   model_used?: unknown;
   tier?: unknown;
+  code?: unknown;
+  rewarded_ad_bonus?: unknown;
+  rewarded_ad_available?: unknown;
   error?: unknown;
 };
 
@@ -53,6 +56,12 @@ type ConversationDetailResponse = {
     created_at: string;
   }>;
   error?: unknown;
+};
+
+type LimitNotice = {
+  code: 'free_limit_reached' | 'daily_limit_reached';
+  message: string;
+  rewardedAdBonus?: number;
 };
 
 const STARTER_PROMPTS = [
@@ -93,6 +102,7 @@ export default function PlayerAiPage() {
   const [history, setHistory] = React.useState<ConversationSummary[]>([]);
   const [input, setInput] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
+  const [limitNotice, setLimitNotice] = React.useState<LimitNotice | null>(null);
   const [isSending, setIsSending] = React.useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = React.useState(false);
@@ -150,6 +160,7 @@ export default function PlayerAiPage() {
     setActiveConversation(null);
     setInput('');
     setError(null);
+    setLimitNotice(null);
     setLastMeta(null);
   }, []);
 
@@ -183,6 +194,7 @@ export default function PlayerAiPage() {
       setConversationId(nextConversationId);
       setActiveConversation(payload.conversation ?? null);
       setLastMeta(null);
+      setLimitNotice(null);
       setIsHistoryOpen(false);
     } catch (caughtError) {
       const message = caughtError instanceof Error ? caughtError.message : 'Unable to load that chat.';
@@ -262,6 +274,7 @@ export default function PlayerAiPage() {
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setError(null);
+    setLimitNotice(null);
     setIsSending(true);
 
     try {
@@ -280,6 +293,22 @@ export default function PlayerAiPage() {
         const errorMessage = typeof payload.error === 'string'
           ? payload.error
           : 'Unable to reach the Lodario Assistant right now.';
+        const errorCode = typeof payload.code === 'string' ? payload.code : '';
+
+        if (apiResponse.status === 429 && (errorCode === 'free_limit_reached' || errorCode === 'daily_limit_reached')) {
+          const rewardedAdBonus = typeof payload.rewarded_ad_bonus === 'number'
+            ? payload.rewarded_ad_bonus
+            : undefined;
+
+          setLimitNotice({
+            code: errorCode,
+            message: errorMessage,
+            rewardedAdBonus,
+          });
+          setMessages(prev => [...prev, createMessage('assistant', errorMessage)]);
+          return;
+        }
+
         throw new Error(errorMessage);
       }
 
@@ -295,6 +324,8 @@ export default function PlayerAiPage() {
       if (tier || modelUsed) {
         setLastMeta({ tier: tier || 'unknown', modelUsed: modelUsed || 'unknown' });
       }
+
+      setLimitNotice(null);
 
       setMessages(prev => [
         ...prev,
@@ -511,6 +542,21 @@ export default function PlayerAiPage() {
           {error && (
             <div className="mb-2 rounded-lg bg-[rgba(255,107,107,0.12)] px-3 py-2 text-xs font-medium text-[#ffb3a7]">
               {error}
+            </div>
+          )}
+
+          {limitNotice && (
+            <div className="mb-2 rounded-lg border border-[rgba(255,193,7,0.25)] bg-[rgba(255,193,7,0.1)] px-3 py-2 text-xs font-medium text-gray-100">
+              <p>{limitNotice.message}</p>
+              {limitNotice.code === 'free_limit_reached' ? (
+                <button
+                  type="button"
+                  disabled
+                  className="mt-2 rounded-full border border-[rgba(255,193,7,0.24)] px-3 py-1.5 text-[11px] font-semibold text-[var(--accent-primary)] opacity-60"
+                >
+                  Watch ad for {limitNotice.rewardedAdBonus ?? 10} more messages - coming soon
+                </button>
+              ) : null}
             </div>
           )}
 
