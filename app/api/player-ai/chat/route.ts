@@ -7,7 +7,10 @@ import {
   isAiAssistantEnabled,
   isGlobalAiAssistantDisabled,
 } from '@/lib/ai/model-config';
-import { buildPlayerAiContext } from '@/lib/ai/player-ai-context';
+import {
+  buildPlayerAiContextResult,
+  PlayerAiContextDebugSummary,
+} from '@/lib/ai/player-ai-context';
 import { checkPlayerAiLimit, consumePlayerAiMessage } from '@/lib/ai/player-ai-limits';
 import { classifyPlayerAiMessageRisk } from '@/lib/ai/player-ai-safety';
 import {
@@ -28,6 +31,21 @@ type ChatPayload = {
 type ConversationResult =
   | { ok: true; id: string }
   | { ok: false; response: NextResponse<{ error: string }> };
+
+function logPlayerAiContextSummary(summary: PlayerAiContextDebugSummary): void {
+  if (process.env.NODE_ENV !== 'development') return;
+
+  console.info('[player-ai] Context summary:', {
+    userId: summary.userId,
+    tier: summary.tier,
+    wellnessRowCount: summary.wellnessRowCount,
+    trainingLogRowCount: summary.trainingLogRowCount,
+    calendarRowCount: summary.calendarRowCount,
+    readinessFound: summary.readinessFound,
+    readinessValue: summary.readinessValue,
+    contextCharacterLength: summary.contextCharacterLength,
+  });
+}
 
 function buildConversationTitle(message: string): string {
   const normalized = message.replace(/\s+/g, ' ').trim();
@@ -236,7 +254,8 @@ export async function POST(request: NextRequest) {
     message,
     messageRisk,
   });
-  const playerContext = await buildPlayerAiContext({ supabase, userId: user.id, tier });
+  const playerContextResult = await buildPlayerAiContextResult({ supabase, userId: user.id, tier });
+  logPlayerAiContextSummary(playerContextResult.debugSummary);
   const conversationResult = await getOrCreateConversation({
     supabase,
     userId: user.id,
@@ -264,7 +283,7 @@ export async function POST(request: NextRequest) {
     const aiResponse = await createPlayerAiResponse({
       message,
       tier,
-      playerContext,
+      playerContext: playerContextResult.context,
       messageRisk,
       model: modelRoute.model,
     });

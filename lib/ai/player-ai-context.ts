@@ -69,6 +69,7 @@ type InjuryRow = {
 
 type ContextWindows = {
   wellnessDays: number;
+  wellnessLimit?: number;
   trainingDays: number;
   trainingLimit?: number;
   calendarDays: number;
@@ -79,10 +80,11 @@ type ContextWindows = {
 
 const TIER_WINDOWS: Record<PlayerAiTier, ContextWindows> = {
   free: {
-    wellnessDays: 14,
-    trainingDays: 28,
-    trainingLimit: 3,
-    calendarDays: 0,
+    wellnessDays: 7,
+    wellnessLimit: 7,
+    trainingDays: 7,
+    trainingLimit: 7,
+    calendarDays: 7,
     includeProfile: false,
     includeInjuries: false,
     includeLoad: false,
@@ -103,6 +105,22 @@ const TIER_WINDOWS: Record<PlayerAiTier, ContextWindows> = {
     includeInjuries: true,
     includeLoad: true,
   },
+};
+
+export type PlayerAiContextDebugSummary = {
+  userId: string;
+  tier: PlayerAiTier;
+  wellnessRowCount: number;
+  trainingLogRowCount: number;
+  calendarRowCount: number;
+  readinessFound: boolean;
+  readinessValue: number | null;
+  contextCharacterLength: number;
+};
+
+export type PlayerAiContextResult = {
+  context: string;
+  debugSummary: PlayerAiContextDebugSummary;
 };
 
 function toDateKey(date: Date): string {
@@ -190,24 +208,39 @@ function summarizeProfile(profile: ProfileRow | null): string[] {
   return [`Profile: ${parts.length ? parts.join('; ') : 'limited profile data available'}.`];
 }
 
-function summarizeReadiness(wellnessLogs: WellnessLog[], trainingLogs: TrainingLog[]): string[] {
+function getLatestReadinessSummary(
+  wellnessLogs: WellnessLog[],
+  trainingLogs: TrainingLog[]
+): { found: boolean; value: number | null; lines: string[] } {
   const latestWellness = wellnessLogs[0];
   if (!latestWellness) {
-    return ['Readiness: not available because no wellness entry was found.'];
+    return {
+      found: false,
+      value: null,
+      lines: ['Readiness: not available because no wellness entry was found.'],
+    };
   }
 
   const asOfDate = parseISO(latestWellness.date);
   const { readiness, load } = calculatePlayerReadinessForDate(wellnessLogs, trainingLogs, asOfDate);
 
   if (readiness.zone === 'no_data') {
-    return [`Readiness: not available for ${latestWellness.date}.`];
+    return {
+      found: false,
+      value: null,
+      lines: [`Readiness: not available for ${latestWellness.date}.`],
+    };
   }
 
-  return [
-    `Readiness (${latestWellness.date}): ${readiness.score}/100, ${readiness.zoneLabel}.`,
-    `Readiness breakdown: sleep ${readiness.breakdown.sleep}, energy ${readiness.breakdown.energy}, fatigue ${readiness.breakdown.fatigue}, stress ${readiness.breakdown.stress}, load ${readiness.breakdown.load}.`,
-    `Load status: ${load.loadRisk}; 7-day load ${Math.round(load.sevenDayLoad)}; acute:chronic ratio ${load.acuteChronicRatio.toFixed(2)}.`,
-  ];
+  return {
+    found: true,
+    value: readiness.score,
+    lines: [
+      `Readiness (${latestWellness.date}): ${readiness.score}/100, ${readiness.zoneLabel}.`,
+      `Readiness breakdown: sleep ${readiness.breakdown.sleep}, energy ${readiness.breakdown.energy}, fatigue ${readiness.breakdown.fatigue}, stress ${readiness.breakdown.stress}, load ${readiness.breakdown.load}.`,
+      `Load status: ${load.loadRisk}; 7-day load ${Math.round(load.sevenDayLoad)}; acute:chronic ratio ${load.acuteChronicRatio.toFixed(2)}.`,
+    ],
+  };
 }
 
 function summarizeWellness(wellnessLogs: WellnessLog[], tier: PlayerAiTier): string[] {
@@ -218,7 +251,7 @@ function summarizeWellness(wellnessLogs: WellnessLog[], tier: PlayerAiTier): str
     `Latest wellness (${latest.date}): sleep ${latest.sleepDuration}h, sleep quality ${latest.sleepQuality}/10, energy ${latest.energy}/10, fatigue ${latest.fatigue}/10, stress ${latest.stress}/10${latest.painActive ? `, pain ${latest.painLevel ?? 'logged'}/10` : ', no active pain logged'}.`,
   ];
 
-  if (tier !== 'free' && wellnessLogs.length > 1) {
+  if (wellnessLogs.length > 1) {
     const avg = wellnessLogs.reduce(
       (acc, log) => ({
         sleep: acc.sleep + log.sleepDuration,
@@ -328,15 +361,15 @@ async function safeQuery<T>(
   return data;
 }
 
-export async function buildPlayerAiContext(params: {
+export async function buildPlayerAiContextResult(params: {
   supabase: SupabaseClient;
   userId: string;
   tier: PlayerAiTier;
-}): Promise<string> {
+}): Promise<PlayerAiContextResult> {
   const windows = TIER_WINDOWS[params.tier];
   const now = new Date();
-  const wellnessStart = toDateKey(subDays(now, windows.wellnessDays));
-  const trainingStart = toDateKey(subDays(now, windows.trainingDays));
+  const wellnessStart = toDateKey(subDays(now, windows.wellnessDays - 1));
+  const trainingStart = toDateKey(subDays(now, windows.trainingDays - 1));
   const calendarEnd = new Date(now);
   calendarEnd.setDate(calendarEnd.getDate() + windows.calendarDays);
 
@@ -354,7 +387,7 @@ export async function buildPlayerAiContext(params: {
       .eq('user_id', params.userId)
       .gte('date', wellnessStart)
       .order('date', { ascending: false })
-      .limit(params.tier === 'free' ? 1 : 20)),
+      .limit(windows.wellnessLimit ?? 20)),
     safeQuery<TrainingRow[]>('training', params.supabase
       .from('training_logs')
       .select('id, date, session_type, duration, distance, intensity, sprinting, performance, pain_active, pain_level, pain_notes, notes')
@@ -384,17 +417,19 @@ export async function buildPlayerAiContext(params: {
 
   const wellnessLogs = (wellnessRows ?? []).map(mapWellness);
   const trainingLogs = (trainingRows ?? []).map(mapTraining);
+  const readinessSummary = getLatestReadinessSummary(wellnessLogs, trainingLogs);
   const lines: string[] = [
     `Context tier: ${params.tier}.`,
     `Context generated at: ${now.toISOString()}.`,
-    'Use only this context when referencing player data. If the needed data is missing, say the player has not logged enough data yet.',
+    `Context coverage: ${wellnessLogs.length} wellness entr${wellnessLogs.length === 1 ? 'y' : 'ies'}, ${trainingLogs.length} training log${trainingLogs.length === 1 ? '' : 's'}, ${(calendarRows ?? []).length} upcoming calendar event${(calendarRows ?? []).length === 1 ? '' : 's'}.`,
+    'Use the logged data below first. If one category is missing, mention only that category is missing and still use the data that exists.',
   ];
 
   if (windows.includeProfile) {
     lines.push(...summarizeProfile(profile));
   }
 
-  lines.push(...summarizeReadiness(wellnessLogs, trainingLogs));
+  lines.push(...readinessSummary.lines);
   lines.push(...summarizeWellness(wellnessLogs, params.tier));
   lines.push(...summarizeTraining(trainingLogs, params.tier));
 
@@ -410,8 +445,31 @@ export async function buildPlayerAiContext(params: {
     lines.push(...summarizeInjuries(injuryRows ?? [], wellnessLogs, trainingLogs));
   }
 
-  return lines
+  const context = lines
     .filter(Boolean)
     .join('\n')
-    .slice(0, params.tier === 'free' ? 1800 : params.tier === 'low' ? 4200 : 6500);
+    .slice(0, params.tier === 'free' ? 2600 : params.tier === 'low' ? 4200 : 6500);
+
+  return {
+    context,
+    debugSummary: {
+      userId: params.userId,
+      tier: params.tier,
+      wellnessRowCount: wellnessLogs.length,
+      trainingLogRowCount: trainingLogs.length,
+      calendarRowCount: (calendarRows ?? []).length,
+      readinessFound: readinessSummary.found,
+      readinessValue: readinessSummary.value,
+      contextCharacterLength: context.length,
+    },
+  };
+}
+
+export async function buildPlayerAiContext(params: {
+  supabase: SupabaseClient;
+  userId: string;
+  tier: PlayerAiTier;
+}): Promise<string> {
+  const result = await buildPlayerAiContextResult(params);
+  return result.context;
 }
