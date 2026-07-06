@@ -519,10 +519,10 @@ export default function PlayerAiPage() {
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-[86%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-lg ${
+                  className={`max-w-[86%] break-words rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-lg ${
                     message.role === 'user'
                       ? 'bg-[var(--accent-primary)] text-white'
-                      : 'border border-[var(--card-border)] bg-[rgba(255,255,255,0.07)] text-gray-100'
+                      : 'whitespace-pre-wrap border border-[var(--card-border)] bg-[rgba(255,255,255,0.07)] text-gray-100'
                   }`}
                 >
                   {message.content}

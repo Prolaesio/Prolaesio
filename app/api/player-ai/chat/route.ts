@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SupabaseClient } from '@supabase/supabase-js';
 
-import { createPlayerAiResponse } from '@/lib/ai/openai';
+import {
+  createPlayerAiResponse,
+  PlayerAiConversationMessage,
+  PlayerAiEmptyResponseError,
+  resolvePlayerAiResponseMode,
+} from '@/lib/ai/openai';
 import {
   getAiLimitConfig,
   isAiAssistantEnabled,
@@ -31,6 +36,12 @@ type ChatPayload = {
 type ConversationResult =
   | { ok: true; id: string }
   | { ok: false; response: NextResponse<{ error: string }> };
+
+type ConversationMessageRow = {
+  role: string;
+  content: string;
+  created_at: string;
+};
 
 function logPlayerAiContextSummary(summary: PlayerAiContextDebugSummary): void {
   if (process.env.NODE_ENV !== 'development') return;
@@ -133,6 +144,37 @@ async function insertMessage(params: {
   }
 
   return true;
+}
+
+async function getRecentConversationMessages(params: {
+  supabase: SupabaseClient;
+  conversationId: string;
+  userId: string;
+}): Promise<PlayerAiConversationMessage[]> {
+  const { data, error } = await params.supabase
+    .from('ai_messages')
+    .select('role, content, created_at')
+    .eq('conversation_id', params.conversationId)
+    .eq('user_id', params.userId)
+    .in('role', ['user', 'assistant'])
+    .order('created_at', { ascending: false })
+    .limit(6)
+    .returns<ConversationMessageRow[]>();
+
+  if (error) {
+    console.error('[player-ai] Failed to load recent conversation messages:', error);
+    return [];
+  }
+
+  return (data ?? [])
+    .reverse()
+    .filter((message): message is ConversationMessageRow & { role: 'user' | 'assistant' } =>
+      message.role === 'user' || message.role === 'assistant'
+    )
+    .map(message => ({
+      role: message.role,
+      content: message.content,
+    }));
 }
 
 async function updateConversationTimestamp(params: {
@@ -267,6 +309,13 @@ export async function POST(request: NextRequest) {
     return conversationResult.response;
   }
 
+  const responseMode = resolvePlayerAiResponseMode(message);
+  const recentMessages = await getRecentConversationMessages({
+    supabase,
+    conversationId: conversationResult.id,
+    userId: user.id,
+  });
+
   const savedUserMessage = await insertMessage({
     supabase,
     conversationId: conversationResult.id,
@@ -286,6 +335,8 @@ export async function POST(request: NextRequest) {
       playerContext: playerContextResult.context,
       messageRisk,
       model: modelRoute.model,
+      responseMode,
+      recentMessages,
     });
     const consumedMessage = await consumePlayerAiMessage({ supabase, userId: user.id, tier });
 
@@ -346,6 +397,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('[player-ai] OpenAI response failed:', error);
+    if (error instanceof PlayerAiEmptyResponseError) {
+      return NextResponse.json(
+        { error: 'The Lodario Assistant did not return any text. Please try again.' },
+        { status: 502 }
+      );
+    }
+
     return NextResponse.json(
       { error: 'Unable to generate a response right now.' },
       { status: 502 }
