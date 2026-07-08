@@ -31,6 +31,7 @@ export const runtime = 'nodejs';
 type ChatPayload = {
   message?: unknown;
   conversation_id?: unknown;
+  local_date?: unknown;
 };
 
 type ConversationResult =
@@ -54,8 +55,21 @@ function logPlayerAiContextSummary(summary: PlayerAiContextDebugSummary): void {
     calendarRowCount: summary.calendarRowCount,
     readinessFound: summary.readinessFound,
     readinessValue: summary.readinessValue,
+    readinessBreakdown: summary.readinessBreakdown,
+    latestWellnessDate: summary.latestWellnessDate,
+    latestTrainingLogDate: summary.latestTrainingLogDate,
+    contextDateRange: summary.contextDateRange,
     contextCharacterLength: summary.contextCharacterLength,
   });
+}
+
+function parseLocalDate(value: unknown): Date | undefined {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return undefined;
+  }
+
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
 function buildConversationTitle(message: string): string {
@@ -255,6 +269,7 @@ export async function POST(request: NextRequest) {
 
   const message = typeof payload.message === 'string' ? payload.message.trim() : '';
   const conversationId = normalizeConversationId(payload.conversation_id);
+  const localDate = parseLocalDate(payload.local_date);
   const { maxMessageChars } = getAiLimitConfig();
 
   if (!message) {
@@ -296,7 +311,12 @@ export async function POST(request: NextRequest) {
     message,
     messageRisk,
   });
-  const playerContextResult = await buildPlayerAiContextResult({ supabase, userId: user.id, tier });
+  const playerContextResult = await buildPlayerAiContextResult({
+    supabase,
+    userId: user.id,
+    tier,
+    asOfDate: localDate,
+  });
   logPlayerAiContextSummary(playerContextResult.debugSummary);
   const conversationResult = await getOrCreateConversation({
     supabase,

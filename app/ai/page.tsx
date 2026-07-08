@@ -95,6 +95,14 @@ function getConversationTitle(conversation: ConversationSummary): string {
   return conversation.title?.trim() || 'Untitled chat';
 }
 
+function getLocalDateKey(): string {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export default function PlayerAiPage() {
   const { session } = useAuth();
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
@@ -285,6 +293,7 @@ export default function PlayerAiPage() {
         body: JSON.stringify({
           message,
           conversation_id: conversationId,
+          local_date: getLocalDateKey(),
         }),
       });
 

@@ -51,6 +51,7 @@ export const LODARIO_PLAYER_AI_SYSTEM_PROMPT = [
   'You are the Lodario player training assistant.',
   'Give read-only guidance based on the Lodario player context provided by the app.',
   'Use the provided Lodario player context first, before giving general advice.',
+  'Current Lodario context is the source of truth. If recent conversation history conflicts with current context, use current context.',
   'Never ignore logged wellness, readiness, training, calendar, pain, or injury data when it is provided.',
   'If useful logged data exists, give a helpful answer from that data and do not say you cannot generate a useful response.',
   'If some context categories are missing, mention only those missing categories and still use the categories that exist.',
@@ -93,10 +94,13 @@ export const LODARIO_PLAYER_AI_RESPONSE_STYLE_PROMPT = [
   '- For "Should I train hard today?", start with a direct yes, no, or maybe.',
   '- For "Why am I tired?", list 2 to 4 likely reasons from logged data.',
   '- For "What should I focus on?", give 2 to 3 priorities.',
-  '- Interpret readiness breakdown scores as positive readiness sub-scores, not raw symptoms.',
+  '- Interpret readiness breakdown scores as positive readiness contribution scores, not raw symptoms.',
+  '- When mentioning readiness components, say "Fatigue contribution: 70/100", "Stress contribution: 80/100", or "Load contribution: 85/100".',
+  '- Never write "high fatigue influence", "high stress impact", or similar wording for readiness contribution scores.',
   '- Use raw wellness values for symptoms: stress 1-3/10 is low, 4-6/10 is moderate, 7-10/10 is high.',
   '- Use raw wellness values for symptoms: fatigue 1-3/10 is low, 4-6/10 is moderate, 7-10/10 is high.',
   '- Energy is different: low energy means the raw energy value is low, such as 1-4/10.',
+  '- Use raw wellness values for symptom wording: fatigue 4/10 is moderate fatigue, stress 3/10 is low stress, energy 4/10 is low energy.',
   '- Never say "fatigue score 70 means high fatigue" or "stress score 80 means high stress"; those are readiness contribution scores.',
 ].join('\n');
 
@@ -157,6 +161,7 @@ function buildRecentConversationInstructions(messages: PlayerAiConversationMessa
 
   return [
     'Recent conversation, for follow-up context only:',
+    'If any previous score or data point conflicts with current Lodario context, ignore the old value.',
     ...messages.slice(-6).map(message => {
       const label = message.role === 'assistant' ? 'Assistant' : 'Player';
       const content = message.content.replace(/\s+/g, ' ').trim().slice(0, 700);

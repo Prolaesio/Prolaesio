@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { SupabaseClient } from '@supabase/supabase-js';
-import { format, parseISO, subDays } from 'date-fns';
+import { format, subDays } from 'date-fns';
 
 import { PlayerAiTier } from './model-config';
 import { calculatePlayerReadinessForDate } from '@/lib/readiness';
@@ -107,6 +107,8 @@ const TIER_WINDOWS: Record<PlayerAiTier, ContextWindows> = {
   },
 };
 
+const READINESS_LOOKBACK_DAYS = 35;
+
 export type PlayerAiContextDebugSummary = {
   userId: string;
   tier: PlayerAiTier;
@@ -115,6 +117,21 @@ export type PlayerAiContextDebugSummary = {
   calendarRowCount: number;
   readinessFound: boolean;
   readinessValue: number | null;
+  readinessBreakdown: {
+    sleep: number;
+    energy: number;
+    fatigue: number;
+    stress: number;
+    load: number;
+  } | null;
+  latestWellnessDate: string | null;
+  latestTrainingLogDate: string | null;
+  contextDateRange: {
+    asOfDate: string;
+    wellnessStart: string;
+    trainingStart: string;
+    readinessStart: string;
+  };
   contextCharacterLength: number;
 };
 
@@ -210,34 +227,43 @@ function summarizeProfile(profile: ProfileRow | null): string[] {
 
 function getLatestReadinessSummary(
   wellnessLogs: WellnessLog[],
-  trainingLogs: TrainingLog[]
-): { found: boolean; value: number | null; lines: string[] } {
-  const latestWellness = wellnessLogs[0];
-  if (!latestWellness) {
+  trainingLogs: TrainingLog[],
+  asOfDate: Date
+): {
+  found: boolean;
+  value: number | null;
+  breakdown: PlayerAiContextDebugSummary['readinessBreakdown'];
+  lines: string[];
+} {
+  const asOfDateKey = toDateKey(asOfDate);
+  const todayWellness = wellnessLogs.find(log => log.date === asOfDateKey);
+  if (!todayWellness) {
     return {
       found: false,
       value: null,
-      lines: ['Readiness: not available because no wellness entry was found.'],
+      breakdown: null,
+      lines: [`Readiness: not available for ${asOfDateKey} because no wellness entry was found for the dashboard date.`],
     };
   }
 
-  const asOfDate = parseISO(latestWellness.date);
   const { readiness, load } = calculatePlayerReadinessForDate(wellnessLogs, trainingLogs, asOfDate);
 
   if (readiness.zone === 'no_data') {
     return {
       found: false,
       value: null,
-      lines: [`Readiness: not available for ${latestWellness.date}.`],
+      breakdown: null,
+      lines: [`Readiness: not available for ${asOfDateKey}.`],
     };
   }
 
   return {
     found: true,
     value: readiness.score,
+    breakdown: readiness.breakdown,
     lines: [
-      `Readiness (${latestWellness.date}): ${readiness.score}/100, ${readiness.zoneLabel}.`,
-      `Readiness breakdown: sleep ${readiness.breakdown.sleep}, energy ${readiness.breakdown.energy}, fatigue ${readiness.breakdown.fatigue}, stress ${readiness.breakdown.stress}, load ${readiness.breakdown.load}.`,
+      `Current dashboard readiness (${asOfDateKey}): ${readiness.score}/100, ${readiness.zoneLabel}. This must match the player dashboard Daily Readiness.`,
+      `Readiness contribution scores: sleep contribution ${readiness.breakdown.sleep}/100, energy contribution ${readiness.breakdown.energy}/100, fatigue contribution ${readiness.breakdown.fatigue}/100, stress contribution ${readiness.breakdown.stress}/100, load contribution ${readiness.breakdown.load}/100. These are positive readiness contribution scores, not raw symptom severity.`,
       `Load status: ${load.loadRisk}; 7-day load ${Math.round(load.sevenDayLoad)}; acute:chronic ratio ${load.acuteChronicRatio.toFixed(2)}.`,
     ],
   };
@@ -365,15 +391,17 @@ export async function buildPlayerAiContextResult(params: {
   supabase: SupabaseClient;
   userId: string;
   tier: PlayerAiTier;
+  asOfDate?: Date;
 }): Promise<PlayerAiContextResult> {
   const windows = TIER_WINDOWS[params.tier];
-  const now = new Date();
+  const now = params.asOfDate ?? new Date();
   const wellnessStart = toDateKey(subDays(now, windows.wellnessDays - 1));
   const trainingStart = toDateKey(subDays(now, windows.trainingDays - 1));
+  const readinessStart = toDateKey(subDays(now, READINESS_LOOKBACK_DAYS - 1));
   const calendarEnd = new Date(now);
   calendarEnd.setDate(calendarEnd.getDate() + windows.calendarDays);
 
-  const [profile, wellnessRows, trainingRows, calendarRows, injuryRows] = await Promise.all([
+  const [profile, wellnessRows, trainingRows, readinessWellnessRows, readinessTrainingRows, calendarRows, injuryRows] = await Promise.all([
     windows.includeProfile
       ? safeQuery<ProfileRow>('profile', params.supabase
         .from('profiles')
@@ -395,6 +423,20 @@ export async function buildPlayerAiContextResult(params: {
       .gte('date', trainingStart)
       .order('date', { ascending: false })
       .limit(windows.trainingLimit ?? 50)),
+    safeQuery<WellnessRow[]>('readiness wellness', params.supabase
+      .from('wellness_logs')
+      .select('date, sleep_time, wake_time, sleep_duration, sleep_quality, energy, fatigue, stress, pain_active, pain_level, pain_notes, notes')
+      .eq('user_id', params.userId)
+      .gte('date', readinessStart)
+      .order('date', { ascending: false })
+      .limit(READINESS_LOOKBACK_DAYS)),
+    safeQuery<TrainingRow[]>('readiness training', params.supabase
+      .from('training_logs')
+      .select('id, date, session_type, duration, distance, intensity, sprinting, performance, pain_active, pain_level, pain_notes, notes')
+      .eq('user_id', params.userId)
+      .gte('date', readinessStart)
+      .order('date', { ascending: false })
+      .limit(120)),
     windows.calendarDays > 0
       ? safeQuery<CalendarRow[]>('calendar', params.supabase
         .from('calendar_events')
@@ -417,12 +459,16 @@ export async function buildPlayerAiContextResult(params: {
 
   const wellnessLogs = (wellnessRows ?? []).map(mapWellness);
   const trainingLogs = (trainingRows ?? []).map(mapTraining);
-  const readinessSummary = getLatestReadinessSummary(wellnessLogs, trainingLogs);
+  const readinessWellnessLogs = (readinessWellnessRows ?? []).map(mapWellness);
+  const readinessTrainingLogs = (readinessTrainingRows ?? []).map(mapTraining);
+  const readinessSummary = getLatestReadinessSummary(readinessWellnessLogs, readinessTrainingLogs, now);
   const lines: string[] = [
     `Context tier: ${params.tier}.`,
     `Context generated at: ${now.toISOString()}.`,
+    `Current dashboard date: ${toDateKey(now)}. Current Lodario context is the source of truth.`,
     `Context coverage: ${wellnessLogs.length} wellness entr${wellnessLogs.length === 1 ? 'y' : 'ies'}, ${trainingLogs.length} training log${trainingLogs.length === 1 ? '' : 's'}, ${(calendarRows ?? []).length} upcoming calendar event${(calendarRows ?? []).length === 1 ? '' : 's'}.`,
-    'Use the logged data below first. If one category is missing, mention only that category is missing and still use the data that exists.',
+    'Use the logged data below first. If conversation history conflicts with current Lodario context, ignore the old conversation value and use current Lodario context.',
+    'If one category is missing, mention only that category is missing and still use the data that exists.',
   ];
 
   if (windows.includeProfile) {
@@ -460,6 +506,15 @@ export async function buildPlayerAiContextResult(params: {
       calendarRowCount: (calendarRows ?? []).length,
       readinessFound: readinessSummary.found,
       readinessValue: readinessSummary.value,
+      readinessBreakdown: readinessSummary.breakdown,
+      latestWellnessDate: readinessWellnessLogs[0]?.date ?? null,
+      latestTrainingLogDate: readinessTrainingLogs[0]?.date ?? null,
+      contextDateRange: {
+        asOfDate: toDateKey(now),
+        wellnessStart,
+        trainingStart,
+        readinessStart,
+      },
       contextCharacterLength: context.length,
     },
   };
