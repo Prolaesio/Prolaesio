@@ -36,21 +36,52 @@ export type PlayerAiUsageStatus = {
   rewardedAdBonus?: number;
 };
 
+export type PlayerAiMessageReservation =
+  | {
+      allowed: true;
+      reservationId: string;
+      tier: PlayerAiTier;
+      limit: number;
+      used: number;
+      remaining: number;
+      rewardedAdCredits?: number;
+      freeCreditSource?: 'lifetime' | 'rewarded';
+    }
+  | {
+      allowed: false;
+      tier: PlayerAiTier;
+      status: number;
+      error: string;
+      code: 'free_limit_reached' | 'daily_limit_reached' | 'limit_check_failed';
+      limit?: number;
+      used?: number;
+      remaining?: number;
+      rewardedAdCredits?: number;
+      rewardedAdBonus?: number;
+    };
+
 type FreeCreditBalance = {
   lifetime_free_used: number | null;
   rewarded_ad_credits: number | null;
 };
 
-type UsageRow = {
-  request_count: number | null;
+type ReservationRow = {
+  id: string;
+};
+
+type ReservationRpcRow = {
+  reservation_id: string | null;
+  allowed: boolean | null;
+  code: string | null;
+  limit_value: number | null;
+  used_count: number | null;
+  remaining_count: number | null;
+  rewarded_ad_credits: number | null;
+  free_credit_source: string | null;
 };
 
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-function sumRequestCount(rows: UsageRow[] | null): number {
-  return (rows ?? []).reduce((total, row) => total + (row.request_count ?? 0), 0);
 }
 
 async function getFreeCreditBalance(params: {
@@ -74,23 +105,58 @@ async function getFreeCreditBalance(params: {
   };
 }
 
-async function getDailyUsageCount(params: {
+async function getDailyReservationCount(params: {
   supabase: SupabaseClient;
   userId: string;
+  tier: PlayerAiTier;
 }): Promise<number | null> {
   const { data, error } = await params.supabase
-    .from('ai_usage')
-    .select('request_count')
+    .from('ai_usage_reservations')
+    .select('id')
     .eq('user_id', params.userId)
     .eq('usage_date', todayIsoDate())
-    .returns<UsageRow[]>();
+    .eq('tier', params.tier)
+    .in('status', ['reserved', 'succeeded'])
+    .returns<ReservationRow[]>();
 
   if (error) {
-    console.error('[player-ai] Failed to load daily AI usage:', error);
+    console.error('[player-ai] Failed to load daily AI reservations:', error);
     return null;
   }
 
-  return sumRequestCount(data);
+  return (data ?? []).length;
+}
+
+function getDailyLimitForTier(tier: PlayerAiTier): number {
+  const config = getAiLimitConfig();
+  return tier === 'high' ? config.highDailyMessageLimit : config.lowDailyMessageLimit;
+}
+
+function getReservationErrorForTier(tier: PlayerAiTier): string {
+  if (tier === 'free') {
+    return 'You have used your free Lodario AI messages. Watch ad rewards for extra messages are coming soon.';
+  }
+
+  return 'You have reached today\'s Lodario AI message limit. Try again tomorrow.';
+}
+
+function normalizeFreeCreditSource(value: string | null): 'lifetime' | 'rewarded' | undefined {
+  if (value === 'lifetime' || value === 'rewarded') return value;
+  return undefined;
+}
+
+function logReservationEvent(params: {
+  tier: PlayerAiTier;
+  limit?: number;
+  used?: number;
+  remaining?: number;
+  reserved?: boolean;
+  refundedOrReleased?: boolean;
+  reservationId?: string;
+}): void {
+  if (process.env.NODE_ENV !== 'development') return;
+
+  console.info('[player-ai] Usage reservation:', params);
 }
 
 export async function checkPlayerAiLimit(params: {
@@ -124,8 +190,7 @@ export async function checkPlayerAiLimit(params: {
         allowed: false,
         tier: params.tier,
         status: 429,
-        error:
-          'You have used your free Lodario AI messages. Watch ad rewards for extra messages are coming soon.',
+        error: getReservationErrorForTier(params.tier),
         code: 'free_limit_reached',
         limit: config.freeLifetimeMessageLimit,
         used: balance.lifetimeFreeUsed,
@@ -145,7 +210,7 @@ export async function checkPlayerAiLimit(params: {
     };
   }
 
-  const dailyUsage = await getDailyUsageCount(params);
+  const dailyUsage = await getDailyReservationCount(params);
 
   if (dailyUsage === null) {
     return {
@@ -157,8 +222,7 @@ export async function checkPlayerAiLimit(params: {
     };
   }
 
-  const limit =
-    params.tier === 'high' ? config.highDailyMessageLimit : config.lowDailyMessageLimit;
+  const limit = getDailyLimitForTier(params.tier);
   const remaining = Math.max(limit - dailyUsage, 0);
 
   if (remaining <= 0) {
@@ -166,7 +230,7 @@ export async function checkPlayerAiLimit(params: {
       allowed: false,
       tier: params.tier,
       status: 429,
-      error: 'You have reached today\'s Lodario AI message limit. Try again tomorrow.',
+      error: getReservationErrorForTier(params.tier),
       code: 'daily_limit_reached',
       limit,
       used: dailyUsage,
@@ -211,11 +275,10 @@ export async function getPlayerAiUsageStatus(params: {
     };
   }
 
-  const dailyUsage = await getDailyUsageCount(params);
+  const dailyUsage = await getDailyReservationCount(params);
   if (dailyUsage === null) return null;
 
-  const limit =
-    params.tier === 'high' ? config.highDailyMessageLimit : config.lowDailyMessageLimit;
+  const limit = getDailyLimitForTier(params.tier);
 
   return {
     tier: params.tier,
@@ -226,25 +289,105 @@ export async function getPlayerAiUsageStatus(params: {
   };
 }
 
-export async function consumePlayerAiMessage(params: {
+export async function reservePlayerAiMessage(params: {
   supabase: SupabaseClient;
   userId: string;
   tier: PlayerAiTier;
-}): Promise<boolean> {
-  if (params.tier !== 'free') {
-    return true;
+}): Promise<PlayerAiMessageReservation> {
+  const config = getAiLimitConfig();
+  const dailyLimit = params.tier === 'free' ? 0 : getDailyLimitForTier(params.tier);
+  const { data, error } = await params.supabase
+    .rpc('reserve_player_ai_message', {
+      p_user_id: params.userId,
+      p_tier: params.tier,
+      p_free_lifetime_limit: config.freeLifetimeMessageLimit,
+      p_daily_limit: dailyLimit,
+    })
+    .returns<ReservationRpcRow[]>();
+
+  if (error) {
+    console.error('[player-ai] Failed to reserve AI message usage:', error);
+    return {
+      allowed: false,
+      tier: params.tier,
+      status: 503,
+      error: 'Unable to reserve your AI message allowance right now. Please try again soon.',
+      code: 'limit_check_failed',
+    };
   }
 
-  const config = getAiLimitConfig();
-  const { data, error } = await params.supabase.rpc('consume_player_ai_free_message', {
+  const rows = Array.isArray(data) ? (data as ReservationRpcRow[]) : [];
+  const result = rows[0];
+  const code = result?.code === 'daily_limit_reached' || result?.code === 'free_limit_reached'
+    ? result.code
+    : 'limit_check_failed';
+  const limit = result?.limit_value ?? undefined;
+  const used = result?.used_count ?? undefined;
+  const remaining = result?.remaining_count ?? undefined;
+  const rewardedAdCredits = result?.rewarded_ad_credits ?? undefined;
+
+  if (!result?.allowed || !result.reservation_id) {
+    return {
+      allowed: false,
+      tier: params.tier,
+      status: code === 'limit_check_failed' ? 503 : 429,
+      error: code === 'limit_check_failed'
+        ? 'Unable to reserve your AI message allowance right now. Please try again soon.'
+        : getReservationErrorForTier(params.tier),
+      code,
+      limit,
+      used,
+      remaining,
+      rewardedAdCredits,
+      rewardedAdBonus: params.tier === 'free' ? config.freeRewardedAdMessageBonus : undefined,
+    };
+  }
+
+  logReservationEvent({
+    tier: params.tier,
+    limit,
+    used,
+    remaining,
+    reserved: true,
+    reservationId: result.reservation_id,
+  });
+
+  return {
+    allowed: true,
+    reservationId: result.reservation_id,
+    tier: params.tier,
+    limit: limit ?? (params.tier === 'free' ? config.freeLifetimeMessageLimit : dailyLimit),
+    used: used ?? 0,
+    remaining: remaining ?? 0,
+    rewardedAdCredits,
+    freeCreditSource: normalizeFreeCreditSource(result.free_credit_source),
+  };
+}
+
+export async function completePlayerAiReservation(params: {
+  supabase: SupabaseClient;
+  userId: string;
+  tier: PlayerAiTier;
+  reservationId: string;
+  success: boolean;
+}): Promise<boolean> {
+  const { data, error } = await params.supabase.rpc('complete_player_ai_message_reservation', {
     p_user_id: params.userId,
-    p_lifetime_limit: config.freeLifetimeMessageLimit,
+    p_reservation_id: params.reservationId,
+    p_success: params.success,
   });
 
   if (error) {
-    console.error('[player-ai] Failed to consume free AI message credit:', error);
+    console.error('[player-ai] Failed to complete AI usage reservation:', error);
     return false;
   }
+
+  logReservationEvent({
+    tier: params.tier,
+    refundedOrReleased: !params.success,
+    reserved: params.success,
+    reservationId: params.reservationId,
+  });
 
   return data === true;
 }

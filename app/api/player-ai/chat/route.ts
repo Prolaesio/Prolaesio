@@ -16,7 +16,10 @@ import {
   buildPlayerAiContextResult,
   PlayerAiContextDebugSummary,
 } from '@/lib/ai/player-ai-context';
-import { checkPlayerAiLimit, consumePlayerAiMessage } from '@/lib/ai/player-ai-limits';
+import {
+  completePlayerAiReservation,
+  reservePlayerAiMessage,
+} from '@/lib/ai/player-ai-limits';
 import { classifyPlayerAiMessageRisk } from '@/lib/ai/player-ai-safety';
 import {
   normalizeConversationId,
@@ -289,25 +292,6 @@ export async function POST(request: NextRequest) {
   }
 
   const tier = await resolvePlayerAiTier({ supabase, userId: user.id });
-  const limitStatus = await checkPlayerAiLimit({ supabase, userId: user.id, tier });
-
-  if (!limitStatus.allowed) {
-    return NextResponse.json(
-      {
-        error: limitStatus.error,
-        code: limitStatus.code,
-        tier: limitStatus.tier,
-        limit: limitStatus.limit,
-        used: limitStatus.used,
-        remaining: limitStatus.remaining,
-        rewarded_ad_credits: limitStatus.rewardedAdCredits,
-        rewarded_ad_bonus: limitStatus.rewardedAdBonus,
-        rewarded_ad_available: false,
-      },
-      { status: limitStatus.status }
-    );
-  }
-
   const messageRisk = classifyPlayerAiMessageRisk(message);
   const modelRoute = await resolvePlayerAiModelRoute({
     supabase,
@@ -341,6 +325,25 @@ export async function POST(request: NextRequest) {
     userId: user.id,
   });
 
+  const reservation = await reservePlayerAiMessage({ supabase, userId: user.id, tier });
+
+  if (!reservation.allowed) {
+    return NextResponse.json(
+      {
+        error: reservation.error,
+        code: reservation.code,
+        tier: reservation.tier,
+        limit: reservation.limit,
+        used: reservation.used,
+        remaining: reservation.remaining,
+        rewarded_ad_credits: reservation.rewardedAdCredits,
+        rewarded_ad_bonus: reservation.rewardedAdBonus,
+        rewarded_ad_available: false,
+      },
+      { status: reservation.status }
+    );
+  }
+
   const savedUserMessage = await insertMessage({
     supabase,
     conversationId: conversationResult.id,
@@ -350,6 +353,13 @@ export async function POST(request: NextRequest) {
   });
 
   if (!savedUserMessage) {
+    await completePlayerAiReservation({
+      supabase,
+      userId: user.id,
+      tier,
+      reservationId: reservation.reservationId,
+      success: false,
+    });
     return NextResponse.json({ error: 'Unable to save message.' }, { status: 500 });
   }
 
@@ -363,22 +373,6 @@ export async function POST(request: NextRequest) {
       responseMode,
       recentMessages,
     });
-    const consumedMessage = await consumePlayerAiMessage({ supabase, userId: user.id, tier });
-
-    if (!consumedMessage) {
-      return NextResponse.json(
-        {
-          error:
-            tier === 'free'
-              ? 'You have used your free Lodario AI messages. Watch ad rewards for extra messages are coming soon.'
-              : 'Unable to confirm your AI message allowance right now.',
-          code: tier === 'free' ? 'free_limit_reached' : 'limit_check_failed',
-          tier,
-          rewarded_ad_available: false,
-        },
-        { status: tier === 'free' ? 429 : 503 }
-      );
-    }
 
     const savedAssistantMessage = await insertMessage({
       supabase,
@@ -390,6 +384,13 @@ export async function POST(request: NextRequest) {
     });
 
     if (!savedAssistantMessage) {
+      await completePlayerAiReservation({
+        supabase,
+        userId: user.id,
+        tier,
+        reservationId: reservation.reservationId,
+        success: false,
+      });
       return NextResponse.json({ error: 'Unable to save assistant response.' }, { status: 500 });
     }
 
@@ -404,7 +405,29 @@ export async function POST(request: NextRequest) {
     });
 
     if (!savedUsage) {
+      await completePlayerAiReservation({
+        supabase,
+        userId: user.id,
+        tier,
+        reservationId: reservation.reservationId,
+        success: false,
+      });
       return NextResponse.json({ error: 'Unable to save AI usage.' }, { status: 500 });
+    }
+
+    const completedReservation = await completePlayerAiReservation({
+      supabase,
+      userId: user.id,
+      tier,
+      reservationId: reservation.reservationId,
+      success: true,
+    });
+
+    if (!completedReservation) {
+      return NextResponse.json(
+        { error: 'Unable to confirm your AI message usage.' },
+        { status: 500 }
+      );
     }
 
     await updateConversationTimestamp({
@@ -422,6 +445,14 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('[player-ai] OpenAI response failed:', error);
+    await completePlayerAiReservation({
+      supabase,
+      userId: user.id,
+      tier,
+      reservationId: reservation.reservationId,
+      success: false,
+    });
+
     if (error instanceof PlayerAiEmptyResponseError) {
       return NextResponse.json(
         { error: 'The Lodario Assistant did not return any text. Please try again.' },
