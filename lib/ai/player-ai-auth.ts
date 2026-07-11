@@ -64,7 +64,7 @@ async function resolveUserRole(
 
   if (error) {
     console.error('[player-ai] Error resolving user role:', error);
-    return metadataRole ?? 'player';
+    return metadataRole;
   }
 
   if (!profile) {
