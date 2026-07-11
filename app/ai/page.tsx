@@ -81,6 +81,16 @@ type UsageStatusResponse = {
   error?: unknown;
 };
 
+type RewardedAdResponse = {
+  ok?: unknown;
+  credits_granted?: unknown;
+  usage?: UsageStatus;
+  error?: unknown;
+  availability?: {
+    message?: unknown;
+  };
+};
+
 const STARTER_PROMPTS = [
   'Explain my readiness',
   'Should I train hard today?',
@@ -162,6 +172,7 @@ export default function PlayerAiPage() {
   const [isLoadingUsage, setIsLoadingUsage] = React.useState(false);
   const [isRewardModalOpen, setIsRewardModalOpen] = React.useState(false);
   const [rewardModalMessage, setRewardModalMessage] = React.useState<string | null>(null);
+  const [isRewardAdLoading, setIsRewardAdLoading] = React.useState(false);
   const messagesEndRef = React.useRef<HTMLDivElement | null>(null);
   const usageRequestIdRef = React.useRef(0);
 
@@ -271,6 +282,50 @@ export default function PlayerAiPage() {
       };
     });
   }, []);
+
+  const requestRewardedAdReward = React.useCallback(async () => {
+    const headers = authHeaders();
+    if (!headers) {
+      setRewardModalMessage('Sign in as a player to use rewarded AI messages.');
+      return;
+    }
+
+    setIsRewardAdLoading(true);
+    setRewardModalMessage(null);
+
+    try {
+      const response = await fetch('/api/player-ai/rewarded-ad', {
+        method: 'POST',
+        headers,
+        cache: 'no-store',
+        body: JSON.stringify({ provider: 'google' }),
+      });
+      const payload = (await response.json()) as RewardedAdResponse;
+      const message = typeof payload.error === 'string'
+        ? payload.error
+        : typeof payload.availability?.message === 'string'
+          ? payload.availability.message
+          : 'Rewarded ads are not available yet.';
+
+      if (!response.ok) {
+        setRewardModalMessage(message);
+        return;
+      }
+
+      if (typeof payload.credits_granted === 'number' && payload.credits_granted > 0) {
+        setRewardModalMessage(`Added ${payload.credits_granted} AI messages.`);
+        if (payload.usage) setUsageStatus(payload.usage);
+        await loadUsageStatus();
+        return;
+      }
+
+      setRewardModalMessage(message);
+    } catch {
+      setRewardModalMessage('Rewarded ads are not available yet.');
+    } finally {
+      setIsRewardAdLoading(false);
+    }
+  }, [authHeaders, loadUsageStatus]);
 
   const loadConversation = React.useCallback(async (nextConversationId: string) => {
     const headers = authHeaders();
@@ -616,10 +671,11 @@ export default function PlayerAiPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setRewardModalMessage('Rewarded ads coming soon.')}
-                className="rounded-xl bg-[var(--accent-primary)] px-4 py-3 text-sm font-bold text-white hover:opacity-90"
+                onClick={() => void requestRewardedAdReward()}
+                disabled={isRewardAdLoading}
+                className="rounded-xl bg-[var(--accent-primary)] px-4 py-3 text-sm font-bold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Yes
+                {isRewardAdLoading ? 'Checking...' : 'Yes'}
               </button>
             </div>
           </div>
