@@ -27,7 +27,14 @@ export type PlayerAiConversationMessage = {
   content: string;
 };
 
-export type PlayerAiResponseMode = 'short' | 'detailed';
+export type PlayerAiResponseMode =
+  | 'factual'
+  | 'training_decision'
+  | 'summary'
+  | 'complex'
+  | 'weight_advice'
+  | 'short'
+  | 'detailed';
 
 export class PlayerAiEmptyResponseError extends Error {
   constructor() {
@@ -65,14 +72,20 @@ export const LODARIO_PLAYER_AI_SYSTEM_PROMPT = [
 
 export const LODARIO_PLAYER_AI_RESPONSE_STYLE_PROMPT = [
   'Response style rules for every Lodario Player AI answer:',
-  '- Default to short mode unless the user clearly asks for more detail.',
-  '- In short mode, answer in 80 to 120 words maximum for normal responses.',
-  '- In short mode, the player should be able to read the answer in about 10 seconds.',
+  '- Match the depth to the question. Simple factual questions should be answered directly, not with sections.',
+  '- For simple profile facts or single data values, answer in 1 sentence.',
+  '- For normal summaries, use the short structured format.',
+  '- For direct training decisions, answer yes/no/maybe first, then 2 to 3 short bullets.',
+  '- For complex planning/calendar questions, use a slightly more detailed organized answer with dates/times when available.',
+  '- For weight/body composition advice, answer directly using profile, age, goals/priorities, readiness, and training context; do not give unsafe weight-cut advice.',
+  '- Default to concise mode unless the user clearly asks for more detail.',
+  '- In concise mode, answer in 80 to 120 words maximum for normal non-factual responses.',
+  '- The player should usually be able to read the answer in about 10 seconds.',
   '- Give the direct answer first.',
   '- Preserve clear spacing with blank lines between sections.',
   '- Put every heading on its own line, ending with a colon.',
   '- Put every bullet on its own line starting with "- ".',
-  '- Use this exact short-mode structure for first responses:',
+  '- Use this short structured format for data summary questions:',
   'Quick take:',
   '1 short sentence.',
   '',
@@ -84,9 +97,9 @@ export const LODARIO_PLAYER_AI_RESPONSE_STYLE_PROMPT = [
   '',
   'Want a more detailed breakdown?',
   '- Avoid big walls of text.',
-  '- Use no more than 3 sections in short mode.',
-  '- Do not include every data point in short mode; save full detail for follow-up.',
-  '- End short answers with one simple follow-up question, such as "Want a more detailed breakdown?"',
+  '- Use no more than 3 sections in short structured mode.',
+  '- Do not include every data point in concise mode; save full detail for follow-up.',
+  '- Only ask a follow-up question when it is useful. Do not ask for a detailed breakdown after a simple factual answer.',
   '- Do not repeat generic safety disclaimers unless pain, injury, dizziness, sharp pain, or concerning symptoms are mentioned.',
   '- If the user asks for more detail, give a longer but still organized answer with: what the data shows, why it matters, practical guidance, watch-outs, and suggested next step.',
   '- For "Summarize my week", give a short weekly snapshot first, then ask if they want details.',
@@ -123,6 +136,44 @@ export function resolvePlayerAiResponseMode(message: string): PlayerAiResponseMo
     return 'detailed';
   }
 
+  if (
+    /\b(?:lose|gain|maintain|cut|bulk)\s+(?:weight|mass)\b/.test(normalized) ||
+    /\b(?:should|do)\s+i\s+(?:lose|gain|maintain|cut|bulk)\b/.test(normalized) ||
+    /\bbody\s+composition\b/.test(normalized)
+  ) {
+    return 'weight_advice';
+  }
+
+  if (
+    /\bhow\s+(?:tall|heavy|old)\s+(?:am\s+i|i\s+am)\b/.test(normalized) ||
+    /\bhow\s+much\s+do\s+i\s+weigh\b/.test(normalized) ||
+    /\bwhat(?:'s| is)\s+my\s+(?:height|weight|age|position|positions|readiness(?:\s+score)?)\b/.test(normalized) ||
+    /\bwhat\s+position\s+(?:am\s+i|do\s+i\s+play)\b/.test(normalized) ||
+    /\bmy\s+readiness\s+score\b/.test(normalized)
+  ) {
+    return 'factual';
+  }
+
+  if (
+    /\bshould\s+i\s+(?:train|rest|do\s+gym|go\s+to\s+gym|lift|sprint|run|play)\b/.test(normalized) ||
+    /\b(?:train|rest|gym|lift|sprint|run|play)\s+(?:hard\s+)?today\b/.test(normalized)
+  ) {
+    return 'training_decision';
+  }
+
+  if (
+    /\b(?:summari[sz]e|explain|why|focus)\b/.test(normalized) &&
+    /\b(?:week|readiness|tired|fatigue|focus|data)\b/.test(normalized)
+  ) {
+    return 'summary';
+  }
+
+  if (
+    /\b(?:coach|calendar|schedule|scheduled|activities|next\s+\d+\s+days?|plan|compare|trend|around\s+my\s+calendar)\b/.test(normalized)
+  ) {
+    return 'complex';
+  }
+
   return 'short';
 }
 
@@ -136,10 +187,74 @@ function buildResponseModeInstructions(mode: PlayerAiResponseMode): string {
     ].join('\n');
   }
 
+  if (mode === 'factual') {
+    return [
+      'Current response mode: simple factual.',
+      'Answer directly in exactly 1 sentence when the requested fact is present in current Lodario context.',
+      'Do not use headings, bullets, "Best move", or "Want a more detailed breakdown?".',
+      'Use current Lodario context as the source of truth.',
+      'For height, include centimeters and a helpful feet/inches conversion, for example: "You are 170 cm (5\'7\") according to your profile."',
+      'For weight, answer in kilograms from the profile, for example: "You weigh 68.5 kg according to your profile."',
+      'For age, answer using the provided age/date of birth.',
+      'For positions, list the profile positions.',
+      'For readiness score, answer with the current dashboard readiness score if provided.',
+      'If the exact requested fact is missing, say only that it is not in the Lodario profile/context yet.',
+    ].join('\n');
+  }
+
+  if (mode === 'training_decision') {
+    return [
+      'Current response mode: direct training decision.',
+      'Start with a direct "Yes", "No", or "Maybe" answer in the first sentence.',
+      'Then give 2 to 3 short bullets using the most relevant current readiness, wellness, training load, pain, and calendar context.',
+      'Keep it short. Do not use the full Quick take / What your data says / Best move template.',
+      'Ask one useful follow-up only if it naturally helps the player choose the next session.',
+    ].join('\n');
+  }
+
+  if (mode === 'summary') {
+    return [
+      'Current response mode: data summary.',
+      'Use exactly this short structured format:',
+      'Quick take:',
+      'One short direct sentence.',
+      '',
+      'What your data says:',
+      '- 2 to 4 short bullets.',
+      '',
+      'Best move:',
+      '- 1 to 3 short bullets.',
+      '',
+      'Want a more detailed breakdown?',
+    ].join('\n');
+  }
+
+  if (mode === 'complex') {
+    return [
+      'Current response mode: complex planning or calendar.',
+      'Give a slightly more detailed organized answer.',
+      'Use bullets and dates/times when calendar or coach-scheduled activity context is available.',
+      'Do not dump every log; include only the relevant items for the question.',
+      'End with "Want the detailed breakdown?" only when a deeper plan would be useful.',
+    ].join('\n');
+  }
+
+  if (mode === 'weight_advice') {
+    return [
+      'Current response mode: weight/body composition advice.',
+      'Answer directly first: maintain, gain slowly, or avoid weight loss/gain for now when supported by context.',
+      'Use height, weight, age, positions, priorities/goals, readiness, and recent training context when available.',
+      'Do not just list random logs. Explain the practical reason in 2 to 4 short bullets.',
+      'Avoid unsafe weight cuts, rapid weight loss, dehydration, skipped meals, or appearance-focused advice.',
+      'For youth athletes, be conservative and suggest discussing body composition goals with a coach, parent/guardian, or qualified professional if relevant.',
+      'Keep the first response short and offer detailed reasoning only at the end.',
+    ].join('\n');
+  }
+
   return [
     'Current response mode: short.',
     'Keep the answer about 50% shorter than a normal explanation.',
-    'Use exactly this structure unless safety concerns require a small extra caution:',
+    'Use this structure for normal data summary questions unless the user asked a simple factual or direct decision question:',
     'Quick take:',
     'One short direct sentence.',
     '',

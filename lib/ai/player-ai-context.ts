@@ -85,7 +85,7 @@ const TIER_WINDOWS: Record<PlayerAiTier, ContextWindows> = {
     trainingDays: 7,
     trainingLimit: 7,
     calendarDays: 7,
-    includeProfile: false,
+    includeProfile: true,
     includeInjuries: false,
     includeLoad: false,
   },
@@ -93,7 +93,7 @@ const TIER_WINDOWS: Record<PlayerAiTier, ContextWindows> = {
     wellnessDays: 7,
     trainingDays: 7,
     calendarDays: 7,
-    includeProfile: false,
+    includeProfile: true,
     includeInjuries: true,
     includeLoad: false,
   },
@@ -132,6 +132,11 @@ export type PlayerAiContextDebugSummary = {
     trainingStart: string;
     readinessStart: string;
   };
+  profileFound: boolean;
+  heightFound: boolean;
+  weightFound: boolean;
+  ageFound: boolean;
+  positionsFound: boolean;
   contextCharacterLength: number;
 };
 
@@ -160,6 +165,21 @@ function sanitizeText(value: string | null | undefined, maxLength = 180): string
   const normalized = value?.replace(/\s+/g, ' ').trim();
   if (!normalized) return null;
   return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 3)}...` : normalized;
+}
+
+function calculateAge(dateOfBirth: string | null, asOfDate: Date): number | null {
+  if (!dateOfBirth) return null;
+
+  const birthDate = new Date(`${dateOfBirth}T12:00:00`);
+  if (Number.isNaN(birthDate.getTime())) return null;
+
+  let age = asOfDate.getFullYear() - birthDate.getFullYear();
+  const monthDelta = asOfDate.getMonth() - birthDate.getMonth();
+  const hasBirthdayPassed =
+    monthDelta > 0 || (monthDelta === 0 && asOfDate.getDate() >= birthDate.getDate());
+
+  if (!hasBirthdayPassed) age -= 1;
+  return age >= 0 && age <= 120 ? age : null;
 }
 
 function mapWellness(row: WellnessRow): WellnessLog {
@@ -210,19 +230,34 @@ function isCoachDraftEvent(recurrenceConfig: unknown): boolean {
   return normalizedMeta.coachManaged === true && normalizedMeta.published === false;
 }
 
-function summarizeProfile(profile: ProfileRow | null): string[] {
+function getProfileDebugSummary(profile: ProfileRow | null, asOfDate: Date) {
+  const calculatedAge = calculateAge(profile?.date_of_birth ?? null, asOfDate);
+
+  return {
+    profileFound: Boolean(profile),
+    heightFound: profile?.height_cm != null,
+    weightFound: profile?.weight_kg != null,
+    ageFound: calculatedAge != null || profile?.age != null,
+    positionsFound: Boolean(profile?.positions?.length),
+  };
+}
+
+function summarizeProfile(profile: ProfileRow | null, asOfDate: Date): string[] {
   if (!profile) return ['Profile: not available.'];
 
+  const age = calculateAge(profile.date_of_birth, asOfDate) ?? profile.age;
   const parts = [
-    profile.age ? `age ${profile.age}` : null,
-    profile.date_of_birth ? `date of birth ${profile.date_of_birth}` : null,
-    profile.positions?.length ? `positions ${profile.positions.join(', ')}` : null,
-    profile.priorities?.length ? `priorities ${profile.priorities.join(', ')}` : null,
-    profile.height_cm != null ? `height ${Number(profile.height_cm)} cm` : null,
-    profile.weight_kg != null ? `weight ${Number(profile.weight_kg)} kg` : null,
+    profile.height_cm != null ? `Height: ${Number(profile.height_cm)} cm` : null,
+    profile.weight_kg != null ? `Weight: ${Number(profile.weight_kg)} kg` : null,
+    age != null ? `Age: ${age}` : null,
+    profile.date_of_birth ? `Date of birth: ${profile.date_of_birth}` : null,
+    profile.positions?.length ? `Positions: ${profile.positions.join(', ')}` : null,
+    profile.priorities?.length ? `Priorities/goals: ${profile.priorities.join(', ')}` : null,
   ].filter(Boolean);
 
-  return [`Profile: ${parts.length ? parts.join('; ') : 'limited profile data available'}.`];
+  return [
+    `Player profile: ${parts.length ? parts.join('; ') : 'limited profile data available'}.`,
+  ];
 }
 
 function getLatestReadinessSummary(
@@ -468,11 +503,12 @@ export async function buildPlayerAiContextResult(params: {
     `Current dashboard date: ${toDateKey(now)}. Current Lodario context is the source of truth.`,
     `Context coverage: ${wellnessLogs.length} wellness entr${wellnessLogs.length === 1 ? 'y' : 'ies'}, ${trainingLogs.length} training log${trainingLogs.length === 1 ? '' : 's'}, ${(calendarRows ?? []).length} upcoming calendar event${(calendarRows ?? []).length === 1 ? '' : 's'}.`,
     'Use the logged data below first. If conversation history conflicts with current Lodario context, ignore the old conversation value and use current Lodario context.',
+    'Use player profile facts when the player asks about their height, weight, age, positions, priorities, or goals. If a profile field is present below, answer with that exact profile value.',
     'If one category is missing, mention only that category is missing and still use the data that exists.',
   ];
 
   if (windows.includeProfile) {
-    lines.push(...summarizeProfile(profile));
+    lines.push(...summarizeProfile(profile, now));
   }
 
   lines.push(...readinessSummary.lines);
@@ -496,6 +532,8 @@ export async function buildPlayerAiContextResult(params: {
     .join('\n')
     .slice(0, params.tier === 'free' ? 2600 : params.tier === 'low' ? 4200 : 6500);
 
+  const profileDebugSummary = getProfileDebugSummary(profile, now);
+
   return {
     context,
     debugSummary: {
@@ -515,6 +553,7 @@ export async function buildPlayerAiContextResult(params: {
         trainingStart,
         readinessStart,
       },
+      ...profileDebugSummary,
       contextCharacterLength: context.length,
     },
   };

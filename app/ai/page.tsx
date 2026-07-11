@@ -5,6 +5,7 @@ import {
   Loader2,
   Menu,
   MessageSquare,
+  Plus,
   RotateCcw,
   Send,
   Sparkles,
@@ -65,6 +66,21 @@ type LimitNotice = {
   rewardedAdBonus?: number;
 };
 
+type UsageStatus = {
+  tier: string;
+  limitType: 'lifetime' | 'daily';
+  limit: number;
+  used: number;
+  remaining: number;
+  rewardedAdCredits?: number;
+  rewardedAdBonus?: number;
+};
+
+type UsageStatusResponse = {
+  usage?: UsageStatus;
+  error?: unknown;
+};
+
 const STARTER_PROMPTS = [
   'Explain my readiness',
   'Should I train hard today?',
@@ -81,14 +97,19 @@ function createMessage(role: ChatRole, content: string): ChatMessage {
   };
 }
 
-function formatHistoryDate(value: string): string {
+function formatHistoryDateTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
 
-  return date.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
+  const day = date.getDate();
+  const month = date.toLocaleString(undefined, { month: 'short' }).toUpperCase();
+  const time = date.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
   });
+
+  return `${day} ${month} - ${time}`;
 }
 
 function getConversationTitle(conversation: ConversationSummary): string {
@@ -101,6 +122,26 @@ function getLocalDateKey(): string {
   const month = `${date.getMonth() + 1}`.padStart(2, '0');
   const day = `${date.getDate()}`.padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function getFriendlyError(message: string): string {
+  if (message.includes('free Lodario AI messages')) {
+    return 'You have used your free AI messages. Extra message rewards are coming soon.';
+  }
+
+  if (message.includes('daily') && message.includes('limit')) {
+    return 'You have used today\'s AI messages. Try again tomorrow.';
+  }
+
+  if (message.includes('did not return any text') || message.includes('generate a response')) {
+    return 'The assistant had trouble replying. Try again in a moment.';
+  }
+
+  if (message.includes('Authentication') || message.includes('Sign in')) {
+    return 'Sign in as a player to use the assistant.';
+  }
+
+  return message || 'Something went wrong. Please try again.';
 }
 
 export default function PlayerAiPage() {
@@ -117,11 +158,16 @@ export default function PlayerAiPage() {
   const [isLoadingHistory, setIsLoadingHistory] = React.useState(false);
   const [isLoadingConversation, setIsLoadingConversation] = React.useState(false);
   const [lastMeta, setLastMeta] = React.useState<{ tier: string; modelUsed: string } | null>(null);
+  const [usageStatus, setUsageStatus] = React.useState<UsageStatus | null>(null);
+  const [isLoadingUsage, setIsLoadingUsage] = React.useState(false);
+  const [isRewardModalOpen, setIsRewardModalOpen] = React.useState(false);
+  const [rewardModalMessage, setRewardModalMessage] = React.useState<string | null>(null);
   const messagesEndRef = React.useRef<HTMLDivElement | null>(null);
+  const usageRequestIdRef = React.useRef(0);
 
   const hasMessages = messages.length > 0;
 
-  const authHeaders = React.useCallback((): HeadersInit | null => {
+  const authHeaders = React.useCallback((): Record<string, string> | null => {
     if (!session?.access_token) return null;
 
     return {
@@ -148,16 +194,52 @@ export default function PlayerAiPage() {
       return conversations;
     } catch (caughtError) {
       const message = caughtError instanceof Error ? caughtError.message : 'Unable to load chat history.';
-      setError(message);
+      setError(getFriendlyError(message));
       return [];
     } finally {
       setIsLoadingHistory(false);
     }
   }, [authHeaders]);
 
+  const loadUsageStatus = React.useCallback(async (): Promise<void> => {
+    const headers = authHeaders();
+    if (!headers) return;
+
+    const requestId = usageRequestIdRef.current + 1;
+    usageRequestIdRef.current = requestId;
+    setIsLoadingUsage(true);
+    try {
+      const response = await fetch('/api/player-ai/usage', {
+        headers: {
+          ...headers,
+          'Cache-Control': 'no-cache',
+        },
+        cache: 'no-store',
+      });
+      const payload = (await response.json()) as UsageStatusResponse;
+
+      if (!response.ok || !payload.usage) {
+        throw new Error(typeof payload.error === 'string' ? payload.error : 'Unable to load message balance.');
+      }
+
+      if (requestId === usageRequestIdRef.current) {
+        setUsageStatus(payload.usage);
+      }
+    } catch {
+      if (requestId === usageRequestIdRef.current) {
+        setUsageStatus(prev => prev);
+      }
+    } finally {
+      if (requestId === usageRequestIdRef.current) {
+        setIsLoadingUsage(false);
+      }
+    }
+  }, [authHeaders]);
+
   React.useEffect(() => {
     void loadHistory();
-  }, [loadHistory]);
+    void loadUsageStatus();
+  }, [loadHistory, loadUsageStatus]);
 
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -171,6 +253,23 @@ export default function PlayerAiPage() {
     setError(null);
     setLimitNotice(null);
     setLastMeta(null);
+  }, []);
+
+  const startNewChat = React.useCallback(() => {
+    resetChatState();
+    void loadUsageStatus();
+  }, [loadUsageStatus, resetChatState]);
+
+  const optimisticallyConsumeMessage = React.useCallback(() => {
+    setUsageStatus(prev => {
+      if (!prev) return prev;
+
+      return {
+        ...prev,
+        used: prev.used + 1,
+        remaining: Math.max(prev.remaining - 1, 0),
+      };
+    });
   }, []);
 
   const loadConversation = React.useCallback(async (nextConversationId: string) => {
@@ -207,7 +306,7 @@ export default function PlayerAiPage() {
       setIsHistoryOpen(false);
     } catch (caughtError) {
       const message = caughtError instanceof Error ? caughtError.message : 'Unable to load that chat.';
-      setError(message);
+      setError(getFriendlyError(message));
     } finally {
       setIsLoadingConversation(false);
     }
@@ -236,7 +335,7 @@ export default function PlayerAiPage() {
       setActiveConversation(prev => prev?.id === updated.id ? updated : prev);
     } catch (caughtError) {
       const message = caughtError instanceof Error ? caughtError.message : 'Unable to update favorite.';
-      setError(message);
+      setError(getFriendlyError(message));
     }
   }, [authHeaders]);
 
@@ -245,6 +344,7 @@ export default function PlayerAiPage() {
     const currentConversationId = conversationId;
 
     resetChatState();
+    void loadUsageStatus();
 
     if (!headers || !currentConversationId) {
       return;
@@ -262,12 +362,13 @@ export default function PlayerAiPage() {
       }
 
       setHistory(prev => prev.filter(conversation => conversation.id !== currentConversationId));
+      void loadUsageStatus();
     } catch (caughtError) {
       const message = caughtError instanceof Error ? caughtError.message : 'Unable to clear chat.';
-      setError(message);
+      setError(getFriendlyError(message));
       void loadHistory();
     }
-  }, [authHeaders, conversationId, loadHistory, resetChatState]);
+  }, [authHeaders, conversationId, loadHistory, loadUsageStatus, resetChatState]);
 
   const sendMessage = React.useCallback(async (rawMessage: string) => {
     const message = rawMessage.trim();
@@ -285,6 +386,7 @@ export default function PlayerAiPage() {
     setError(null);
     setLimitNotice(null);
     setIsSending(true);
+    void loadUsageStatus();
 
     try {
       const apiResponse = await fetch('/api/player-ai/chat', {
@@ -312,13 +414,14 @@ export default function PlayerAiPage() {
 
           setLimitNotice({
             code: errorCode,
-            message: errorMessage,
+            message: getFriendlyError(errorMessage),
             rewardedAdBonus,
           });
           setMessages(prev => [
             ...prev.filter(chatMessage => chatMessage.id !== userMessage.id),
-            createMessage('assistant', errorMessage),
+            createMessage('assistant', getFriendlyError(errorMessage)),
           ]);
+          void loadUsageStatus();
           return;
         }
 
@@ -339,6 +442,7 @@ export default function PlayerAiPage() {
       }
 
       setLimitNotice(null);
+      optimisticallyConsumeMessage();
 
       setMessages(prev => [
         ...prev,
@@ -349,6 +453,7 @@ export default function PlayerAiPage() {
       ]);
 
       const refreshedHistory = await loadHistory();
+      await loadUsageStatus();
       if (nextConversationId) {
         const refreshedConversation = refreshedHistory.find(item => item.id === nextConversationId);
         if (refreshedConversation) setActiveConversation(refreshedConversation);
@@ -357,13 +462,13 @@ export default function PlayerAiPage() {
       const errorMessage = caughtError instanceof Error
         ? caughtError.message
         : 'Unable to reach the Lodario Assistant right now.';
-      setError(errorMessage);
+      setError(getFriendlyError(errorMessage));
       setMessages(prev => prev.filter(chatMessage => chatMessage.id !== userMessage.id));
       setInput(message);
     } finally {
       setIsSending(false);
     }
-  }, [authHeaders, conversationId, isSending, loadHistory]);
+  }, [authHeaders, conversationId, isSending, loadHistory, loadUsageStatus, optimisticallyConsumeMessage]);
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -378,13 +483,13 @@ export default function PlayerAiPage() {
       {isHistoryOpen && (
         <div className="absolute inset-0 z-30 bg-black/60 backdrop-blur-sm" onClick={() => setIsHistoryOpen(false)}>
           <aside
-            className="h-full w-[86%] max-w-xs border-r border-[var(--card-border)] bg-[rgba(16,18,27,0.98)] p-4 shadow-2xl"
+            className="flex h-full w-[88%] max-w-xs flex-col border-r border-[var(--card-border)] bg-[rgba(16,18,27,0.98)] p-4 shadow-2xl"
             onClick={event => event.stopPropagation()}
           >
-            <div className="mb-5 flex items-center justify-between">
+            <div className="mb-4 flex shrink-0 items-center justify-between">
               <div>
                 <h2 className="text-lg font-bold text-white">Chat history</h2>
-                <p className="mt-1 text-xs text-gray-500">Recent 3 days and favorites</p>
+                <p className="mt-1 text-xs text-gray-500">Recent chats and favorites</p>
               </div>
               <button
                 type="button"
@@ -399,16 +504,16 @@ export default function PlayerAiPage() {
             <button
               type="button"
               onClick={() => {
-                resetChatState();
+                startNewChat();
                 setIsHistoryOpen(false);
               }}
-              className="mb-4 flex w-full items-center gap-2 rounded-lg border border-[var(--card-border)] bg-[rgba(255,193,7,0.1)] px-3 py-3 text-left text-sm font-semibold text-[var(--accent-primary)]"
+              className="mb-4 flex w-full shrink-0 items-center gap-2 rounded-lg border border-[rgba(255,193,7,0.25)] bg-[rgba(255,193,7,0.09)] px-3 py-3 text-left text-sm font-semibold text-[var(--accent-primary)]"
             >
               <MessageSquare size={17} />
               New chat
             </button>
 
-            <div className="space-y-2 overflow-y-auto pb-8">
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pb-8 pr-1">
               {isLoadingHistory ? (
                 <div className="flex items-center gap-2 px-2 py-4 text-sm text-gray-400">
                   <Loader2 size={16} className="animate-spin" />
@@ -422,9 +527,11 @@ export default function PlayerAiPage() {
                 history.map(conversation => (
                   <div
                     key={conversation.id}
-                    className={`rounded-lg border px-3 py-3 ${
+                    className={`rounded-xl border px-3 py-3 ${
                       conversation.id === conversationId
                         ? 'border-[var(--accent-primary)] bg-[rgba(255,193,7,0.12)]'
+                        : conversation.is_favorite
+                          ? 'border-[rgba(255,193,7,0.28)] bg-[rgba(255,193,7,0.07)]'
                         : 'border-[var(--card-border)] bg-[rgba(255,255,255,0.04)]'
                     }`}
                   >
@@ -435,9 +542,16 @@ export default function PlayerAiPage() {
                         className="min-w-0 flex-1 text-left"
                       >
                         <p className="truncate text-sm font-semibold text-white">{getConversationTitle(conversation)}</p>
-                        <p className="mt-1 text-[11px] uppercase tracking-wider text-gray-500">
-                          {formatHistoryDate(conversation.updated_at)}
-                        </p>
+                        <div className="mt-2 flex min-w-0 items-center gap-2">
+                          <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                            {formatHistoryDateTime(conversation.updated_at)}
+                          </p>
+                          {conversation.is_favorite ? (
+                            <span className="rounded-full bg-[rgba(255,193,7,0.14)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--accent-primary)]">
+                              Favorite
+                            </span>
+                          ) : null}
+                        </div>
                       </button>
                       <button
                         type="button"
@@ -460,7 +574,59 @@ export default function PlayerAiPage() {
         </div>
       )}
 
-      <header className="z-10 flex items-center justify-between border-b border-[var(--card-border)] bg-[rgba(16,18,27,0.86)] px-4 py-3 backdrop-blur-xl">
+      {isRewardModalOpen && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/65 px-5 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-[var(--card-border)] bg-[rgba(22,24,34,0.98)] p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-base font-bold text-white">More AI messages</h2>
+                <p className="mt-2 text-sm leading-relaxed text-gray-300">
+                  Watch a full 30 second ad for 10 more AI messages?
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRewardModalOpen(false);
+                  setRewardModalMessage(null);
+                }}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-400 hover:bg-white/10 hover:text-white"
+                aria-label="Close reward message dialog"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {rewardModalMessage ? (
+              <div className="mt-4 rounded-xl border border-[rgba(255,193,7,0.25)] bg-[rgba(255,193,7,0.09)] px-3 py-2 text-sm font-medium text-[var(--accent-primary)]">
+                {rewardModalMessage}
+              </div>
+            ) : null}
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRewardModalOpen(false);
+                  setRewardModalMessage(null);
+                }}
+                className="rounded-xl border border-[var(--card-border)] px-4 py-3 text-sm font-semibold text-gray-200 hover:bg-white/10"
+              >
+                No
+              </button>
+              <button
+                type="button"
+                onClick={() => setRewardModalMessage('Rewarded ads coming soon.')}
+                className="rounded-xl bg-[var(--accent-primary)] px-4 py-3 text-sm font-bold text-white hover:opacity-90"
+              >
+                Yes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <header className="z-10 flex items-center justify-between border-b border-[var(--card-border)] bg-[rgba(16,18,27,0.9)] px-4 py-3 backdrop-blur-xl">
         <button
           type="button"
           onClick={() => setIsHistoryOpen(true)}
@@ -470,56 +636,75 @@ export default function PlayerAiPage() {
           <Menu size={22} />
         </button>
 
-        <div className="min-w-0 px-3 text-center">
+        <div className="min-w-0 flex-1 px-3 text-center">
           <h1 className="truncate text-base font-bold text-white">Lodario Assistant</h1>
           <p className="truncate text-[11px] font-medium text-[var(--accent-secondary)]">
             {activeConversation ? getConversationTitle(activeConversation) : 'Player training chat'}
           </p>
         </div>
 
-        {hasMessages ? (
-          <button
-            type="button"
-            onClick={() => void clearCurrentChat()}
-            className="touch-target flex h-10 items-center gap-1 rounded-full px-3 text-xs font-semibold text-[#ffb3a7] hover:bg-[rgba(255,107,107,0.1)]"
-          >
-            <Trash2 size={16} />
-            Clear
-          </button>
-        ) : (
-          <div className="h-10 w-10" />
-        )}
+        <div className="flex min-w-[7.4rem] items-center justify-end gap-1">
+          {hasMessages ? (
+            <button
+              type="button"
+              onClick={() => void clearCurrentChat()}
+              className="touch-target flex h-9 items-center gap-1 rounded-full px-2 text-[11px] font-semibold text-[#ffb3a7] hover:bg-[rgba(255,107,107,0.1)]"
+            >
+              <Trash2 size={14} />
+              Clear
+            </button>
+          ) : null}
+
+          <div className="flex items-center rounded-full border border-[rgba(255,193,7,0.22)] bg-[rgba(255,193,7,0.08)]">
+            <span className="min-w-12 px-2.5 py-1.5 text-center text-[11px] font-bold text-[var(--accent-primary)]">
+              {isLoadingUsage
+                ? '...'
+                : usageStatus
+                  ? `${Math.max(usageStatus.remaining, 0)} left`
+                  : '-- left'}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setRewardModalMessage(null);
+                setIsRewardModalOpen(true);
+              }}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--accent-primary)] hover:bg-[rgba(255,193,7,0.14)]"
+              aria-label="Get more AI messages"
+            >
+              <Plus size={15} />
+            </button>
+          </div>
+        </div>
       </header>
 
       <main className="relative flex flex-1 flex-col overflow-hidden">
         <div className="flex-1 space-y-4 overflow-y-auto px-4 pb-32 pt-4">
           {!hasMessages ? (
-            <div className="flex min-h-full flex-col justify-start pt-8 text-center">
-              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[rgba(255,193,7,0.14)] text-[var(--accent-primary)]">
-                <Sparkles size={26} />
+            <div className="flex min-h-full flex-col justify-start pt-7 text-center">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[rgba(255,193,7,0.12)] text-[var(--accent-primary)]">
+                <Sparkles size={23} />
               </div>
-              <h2 className="text-xl font-bold text-white">Ask about your training</h2>
-              <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-gray-400">
-                Get practical help understanding readiness, fatigue, soreness, training logs, and what to discuss with your coach.
+              <h2 className="text-xl font-bold text-white">What do you need today?</h2>
+              <p className="mx-auto mt-2 max-w-[16rem] text-sm leading-relaxed text-gray-400">
+                Ask about readiness, fatigue, soreness, or your next session.
               </p>
 
-              <div className="mt-7 grid grid-cols-1 gap-2">
+              <div className="mt-6 grid grid-cols-1 gap-2">
                 {STARTER_PROMPTS.map(prompt => (
                   <button
                     key={prompt}
                     type="button"
                     onClick={() => void sendMessage(prompt)}
                     disabled={isSending || isLoadingConversation}
-                    className="touch-target rounded-xl border border-[rgba(255,193,7,0.28)] bg-[rgba(255,193,7,0.08)] px-4 py-3 text-left text-sm font-semibold text-gray-100 shadow-lg backdrop-blur-xl transition hover:border-[var(--accent-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="touch-target rounded-xl border border-[rgba(255,193,7,0.2)] bg-[rgba(255,255,255,0.045)] px-4 py-3 text-left text-sm font-semibold text-gray-100 backdrop-blur-xl transition hover:border-[var(--accent-primary)] hover:bg-[rgba(255,193,7,0.08)] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {prompt}
                   </button>
                 ))}
               </div>
 
-              <p className="mx-auto mt-6 max-w-xs text-xs leading-relaxed text-gray-500">
-                The assistant cannot diagnose injuries or replace medical advice.
-              </p>
+              <p className="mx-auto mt-5 max-w-xs text-xs text-gray-600">Guidance only. For injury concerns, speak to a trusted adult or professional.</p>
             </div>
           ) : (
             messages.map(message => (
@@ -531,7 +716,7 @@ export default function PlayerAiPage() {
                   className={`max-w-[86%] break-words rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-lg ${
                     message.role === 'user'
                       ? 'bg-[var(--accent-primary)] text-white'
-                      : 'whitespace-pre-wrap border border-[var(--card-border)] bg-[rgba(255,255,255,0.07)] text-gray-100'
+                      : 'whitespace-pre-wrap border border-[var(--card-border)] bg-[rgba(255,255,255,0.065)] text-gray-100'
                   }`}
                 >
                   {message.content}
@@ -552,7 +737,7 @@ export default function PlayerAiPage() {
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 border-t border-[var(--card-border)] bg-[rgba(16,18,27,0.94)] px-4 pb-4 pt-3 backdrop-blur-xl">
+        <div className="absolute bottom-0 left-0 right-0 border-t border-[var(--card-border)] bg-[rgba(16,18,27,0.95)] px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl">
           {error && (
             <div className="mb-2 rounded-lg bg-[rgba(255,107,107,0.12)] px-3 py-2 text-xs font-medium text-[#ffb3a7]">
               {error}
@@ -565,10 +750,13 @@ export default function PlayerAiPage() {
               {limitNotice.code === 'free_limit_reached' ? (
                 <button
                   type="button"
-                  disabled
-                  className="mt-2 rounded-full border border-[rgba(255,193,7,0.24)] px-3 py-1.5 text-[11px] font-semibold text-[var(--accent-primary)] opacity-60"
+                  onClick={() => {
+                    setRewardModalMessage(null);
+                    setIsRewardModalOpen(true);
+                  }}
+                  className="mt-2 rounded-full border border-[rgba(255,193,7,0.24)] px-3 py-1.5 text-[11px] font-semibold text-[var(--accent-primary)] hover:bg-[rgba(255,193,7,0.1)]"
                 >
-                  Watch ad for {limitNotice.rewardedAdBonus ?? 10} more messages - coming soon
+                  Watch ad for {limitNotice.rewardedAdBonus ?? 10} more
                 </button>
               ) : null}
             </div>
@@ -595,7 +783,7 @@ export default function PlayerAiPage() {
               <textarea
                 value={input}
                 onChange={event => setInput(event.target.value)}
-                placeholder="Ask about readiness, fatigue, soreness, or training..."
+                placeholder="Ask about your training..."
                 rows={1}
                 disabled={isSending || isLoadingConversation}
                 className="max-h-28 min-h-11 flex-1 resize-none bg-transparent px-2 py-3 text-sm text-white outline-none placeholder:text-gray-500 disabled:opacity-60"
@@ -620,7 +808,7 @@ export default function PlayerAiPage() {
           {hasMessages && (
             <button
               type="button"
-              onClick={resetChatState}
+              onClick={startNewChat}
               className="mx-auto mt-2 flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-gray-300"
             >
               <RotateCcw size={13} />

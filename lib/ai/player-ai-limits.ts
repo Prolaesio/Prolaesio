@@ -26,6 +26,16 @@ export type PlayerAiLimitStatus =
       rewardedAdBonus?: number;
     };
 
+export type PlayerAiUsageStatus = {
+  tier: PlayerAiTier;
+  limitType: 'lifetime' | 'daily';
+  limit: number;
+  used: number;
+  remaining: number;
+  rewardedAdCredits?: number;
+  rewardedAdBonus?: number;
+};
+
 type FreeCreditBalance = {
   lifetime_free_used: number | null;
   rewarded_ad_credits: number | null;
@@ -170,6 +180,49 @@ export async function checkPlayerAiLimit(params: {
     limit,
     used: dailyUsage,
     remaining,
+  };
+}
+
+export async function getPlayerAiUsageStatus(params: {
+  supabase: SupabaseClient;
+  userId: string;
+  tier: PlayerAiTier;
+}): Promise<PlayerAiUsageStatus | null> {
+  const config = getAiLimitConfig();
+
+  if (params.tier === 'free') {
+    const balance = await getFreeCreditBalance(params);
+    if (!balance) return null;
+
+    const includedRemaining = Math.max(
+      config.freeLifetimeMessageLimit - balance.lifetimeFreeUsed,
+      0
+    );
+    const remaining = includedRemaining + balance.rewardedAdCredits;
+
+    return {
+      tier: params.tier,
+      limitType: 'lifetime',
+      limit: config.freeLifetimeMessageLimit,
+      used: balance.lifetimeFreeUsed,
+      remaining,
+      rewardedAdCredits: balance.rewardedAdCredits,
+      rewardedAdBonus: config.freeRewardedAdMessageBonus,
+    };
+  }
+
+  const dailyUsage = await getDailyUsageCount(params);
+  if (dailyUsage === null) return null;
+
+  const limit =
+    params.tier === 'high' ? config.highDailyMessageLimit : config.lowDailyMessageLimit;
+
+  return {
+    tier: params.tier,
+    limitType: 'daily',
+    limit,
+    used: dailyUsage,
+    remaining: Math.max(limit - dailyUsage, 0),
   };
 }
 
