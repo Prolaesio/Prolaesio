@@ -47,7 +47,7 @@ type UsageRow = {
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 
 function isPlayerAiTier(value: unknown): value is PlayerAiTier {
-  return value === 'free' || value === 'low' || value === 'high';
+  return value === 'free' || value === 'pro' || value === 'premium';
 }
 
 function safeTokenEquals(actual: string, expected: string): boolean {
@@ -297,7 +297,7 @@ export async function POST(request: NextRequest) {
 
     if (action === 'set_tier') {
       if (!isPlayerAiTier(payload.tier)) {
-        return NextResponse.json({ error: 'tier must be free, low, or high.' }, { status: 400 });
+        return NextResponse.json({ error: 'tier must be free, pro, or premium.' }, { status: 400 });
       }
 
       const { error } = await supabase

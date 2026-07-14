@@ -129,7 +129,7 @@ async function getDailyReservationCount(params: {
 
 function getDailyLimitForTier(tier: PlayerAiTier): number {
   const config = getAiLimitConfig();
-  return tier === 'high' ? config.highDailyMessageLimit : config.lowDailyMessageLimit;
+  return tier === 'premium' ? config.premiumDailyMessageLimit : config.proDailyMessageLimit;
 }
 
 function getReservationErrorForTier(tier: PlayerAiTier): string {

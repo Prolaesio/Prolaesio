@@ -37,7 +37,9 @@ type PlayerAiResponse = {
   response?: unknown;
   conversation_id?: unknown;
   model_used?: unknown;
+  model_label?: unknown;
   tier?: unknown;
+  tier_label?: unknown;
   code?: unknown;
   rewarded_ad_bonus?: unknown;
   rewarded_ad_available?: unknown;
@@ -167,7 +169,7 @@ export default function PlayerAiPage() {
   const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = React.useState(false);
   const [isLoadingConversation, setIsLoadingConversation] = React.useState(false);
-  const [lastMeta, setLastMeta] = React.useState<{ tier: string; modelUsed: string } | null>(null);
+  const [lastMeta, setLastMeta] = React.useState<{ tierLabel: string; modelLabel: string } | null>(null);
   const [usageStatus, setUsageStatus] = React.useState<UsageStatus | null>(null);
   const [isLoadingUsage, setIsLoadingUsage] = React.useState(false);
   const [isRewardModalOpen, setIsRewardModalOpen] = React.useState(false);
@@ -485,15 +487,18 @@ export default function PlayerAiPage() {
 
       const assistantResponse = typeof payload.response === 'string' ? payload.response.trim() : '';
       const nextConversationId = typeof payload.conversation_id === 'string' ? payload.conversation_id : null;
-      const tier = typeof payload.tier === 'string' ? payload.tier : '';
-      const modelUsed = typeof payload.model_used === 'string' ? payload.model_used : '';
+      const tierLabel = typeof payload.tier_label === 'string' ? payload.tier_label : '';
+      const modelLabel = typeof payload.model_label === 'string' ? payload.model_label : '';
 
       if (nextConversationId) {
         setConversationId(nextConversationId);
       }
 
-      if (tier || modelUsed) {
-        setLastMeta({ tier: tier || 'unknown', modelUsed: modelUsed || 'unknown' });
+      if (tierLabel || modelLabel) {
+        setLastMeta({
+          tierLabel: tierLabel || 'Unknown tier',
+          modelLabel: modelLabel || 'Lodario AI',
+        });
       }
 
       setLimitNotice(null);
@@ -819,7 +824,7 @@ export default function PlayerAiPage() {
           )}
 
           <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-gray-500">
-            <span>{lastMeta ? `${lastMeta.tier} / ${lastMeta.modelUsed}` : 'Read-only guidance'}</span>
+            <span>{lastMeta ? `${lastMeta.tierLabel} / ${lastMeta.modelLabel}` : 'Read-only guidance'}</span>
             {activeConversation && (
               <button
                 type="button"

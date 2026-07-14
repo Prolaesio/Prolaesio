@@ -9,6 +9,7 @@ import {
 } from '@/lib/ai/openai';
 import {
   getAiLimitConfig,
+  getPlayerAiTierLabel,
   isAiAssistantEnabled,
   isGlobalAiAssistantDisabled,
 } from '@/lib/ai/model-config';
@@ -370,6 +371,8 @@ export async function POST(request: NextRequest) {
       playerContext: playerContextResult.context,
       messageRisk,
       model: modelRoute.model,
+      reasoningEffort: modelRoute.reasoningEffort,
+      maxOutputTokens: modelRoute.maxOutputTokens,
       responseMode,
       recentMessages,
     });
@@ -440,7 +443,9 @@ export async function POST(request: NextRequest) {
       response: aiResponse.content,
       conversation_id: conversationResult.id,
       model_used: aiResponse.modelUsed,
+      model_label: modelRoute.modelLabel,
       tier,
+      tier_label: getPlayerAiTierLabel(tier),
       route: modelRoute.route,
     });
   } catch (error) {
@@ -466,4 +471,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

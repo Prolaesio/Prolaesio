@@ -67,7 +67,7 @@ export const LODARIO_PLAYER_AI_SYSTEM_PROMPT = [
   'For fatigue questions, consider sleep, fatigue, soreness, training load, RPE/intensity, and pain notes when present.',
   'For training intensity questions, consider readiness, soreness, fatigue, recent load, and upcoming calendar when present.',
   'Do not invent readiness scores, wellness entries, training logs, calendar events, pain notes, injuries, or profile details.',
-  'Keep answers concise, supportive, and specific, especially for free/nano users.',
+  'Keep answers concise, supportive, and specific, especially for Free users.',
 ].join('\n');
 
 export const LODARIO_PLAYER_AI_RESPONSE_STYLE_PROMPT = [
@@ -372,15 +372,17 @@ export async function createPlayerAiResponse(params: {
   playerContext: string;
   messageRisk: PlayerAiMessageRisk;
   model: string;
+  reasoningEffort: 'low' | 'high';
+  maxOutputTokens?: number;
   responseMode: PlayerAiResponseMode;
   recentMessages: PlayerAiConversationMessage[];
 }): Promise<PlayerAiResponse> {
-  const { maxOutputTokens } = getAiLimitConfig();
+  const defaultMaxOutputTokens = getAiLimitConfig().maxOutputTokens;
   const response = await getOpenAiClient().responses.create({
     model: params.model,
-    max_output_tokens: maxOutputTokens,
+    max_output_tokens: params.maxOutputTokens ?? defaultMaxOutputTokens,
     reasoning: {
-      effort: 'minimal',
+      effort: params.reasoningEffort,
     },
     instructions: [
       LODARIO_PLAYER_AI_SYSTEM_PROMPT,
@@ -426,4 +428,3 @@ export async function createPlayerAiResponse(params: {
     },
   };
 }
-

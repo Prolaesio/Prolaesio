@@ -29,7 +29,7 @@ The MVP should not:
 - Create database records or write back AI recommendations.
 - Message coaches, parents, teammates, or clinicians automatically.
 - Analyze images, video, GPS files, wearables, or external health data.
-- Use GPT-5.5 for routine chat, simple summaries, or basic guidance.
+- Use GPT-5.6 Sol for routine chat, simple summaries, or ordinary training guidance.
 - Support coach-facing AI workflows yet.
 - Include billing, usage dashboards, admin controls, or tier upgrade prompts beyond simple feature limits.
 
@@ -37,7 +37,7 @@ The MVP should not:
 
 ### Free Player
 
-Free players should receive lightweight guidance powered by GPT nano.
+Free players should receive lightweight guidance powered by GPT-5 Nano.
 
 Allowed:
 
@@ -54,9 +54,9 @@ Limits:
 - No deeper multi-week analysis.
 - No complex scenario planning.
 
-### Low-Tier Player
+### Pro Player
 
-Low-tier players should receive richer everyday support powered by GPT mini.
+Pro players should receive richer everyday support powered by GPT-5.6 Luna.
 
 Allowed:
 
@@ -69,30 +69,31 @@ Allowed:
 
 Limits:
 
-- No GPT-5.5 escalation.
+- No GPT-5.6 Sol escalation.
 - No medical diagnosis or advanced injury interpretation.
 - No automatic plan generation or data writes.
 
-### High-Tier Player
+### Premium Player
 
-High-tier players should use GPT mini by default, with GPT-5.5 reserved only for harder tasks.
+Premium players should use GPT-5.6 Terra by default. GPT-5.6 Sol is an automatic, hidden escalation for exceptionally complex requests only.
 
 Allowed:
 
-- Use everything in the low-tier experience.
+- Use everything in the Pro experience.
 - Ask more detailed multi-factor questions across readiness, wellness, logs, calendar, and injury notes.
 - Receive more nuanced weekly or monthly summaries.
 - Ask for structured decision support, such as whether to train normally, reduce intensity, or ask a coach before training.
-- Escalate only harder tasks to GPT-5.5, such as complex multi-week trend interpretation, conflicting signals, or detailed coach-ready summaries.
+- Escalate only exceptionally difficult tasks to GPT-5.6 Sol, such as advanced long-term programme creation with several constraints, extensive multi-week data analysis, or a detailed deep-research request.
 
 Limits:
 
-- GPT-5.5 should not be used for routine summaries, casual chat, or simple readiness questions.
+- GPT-5.6 Sol is not user-selectable and must not be used for routine summaries, casual chat, ordinary training recommendations, simple readiness questions, or pain/injury requests.
+- Sol escalation is capped by both a daily limit and a rolling 30-day limit; Terra handles the request when either cap is reached or the Sol route cannot be verified.
 - No medical diagnosis, treatment plans, autonomous return-to-play advice, or automatic data writes.
 
 ## 5. Tier Behavior Summary
 
-| Capability | Free | Low-tier | High-tier |
+| Capability | Free | Pro | Premium |
 | --- | --- | --- | --- |
 | Basic readiness and wellness Q&A | Yes | Yes | Yes |
 | Recent training log summary | Limited | Yes | Yes |
@@ -101,7 +102,8 @@ Limits:
 | Weekly trend summary | No | Yes | Yes |
 | Multi-week pattern analysis | No | Limited | Yes |
 | Coach check-in summary | Limited | Yes | Yes |
-| GPT-5.5 escalation | No | No | Hard tasks only |
+| Default model | GPT-5 Nano | GPT-5.6 Luna | GPT-5.6 Terra |
+| GPT-5.6 Sol escalation | No | No | Exceptional tasks only; automatic and capped |
 | Writes to app data | No | No | No |
 
 ## 6. Player Data To Use Later
@@ -195,9 +197,9 @@ These should wait until after the MVP is stable:
 ### Phase 5: AI API Route
 
 - Add the AI route only after the data contract and safety contract are defined.
-- Route Free to GPT nano.
-- Route Low-tier to GPT mini.
-- Route High-tier to GPT mini by default, escalating to GPT-5.5 only for hard tasks.
+- Route Free to GPT-5 Nano.
+- Route Pro to GPT-5.6 Luna.
+- Route Premium to GPT-5.6 Terra by default, escalating automatically to GPT-5.6 Sol only for exceptional tasks within the configured safeguards.
 - Log only safe operational metadata, not sensitive full prompts or private player notes.
 
 ### Phase 6: Player UI MVP
@@ -210,6 +212,6 @@ These should wait until after the MVP is stable:
 
 - Test common player questions and safety edge cases.
 - Verify no data writes happen.
-- Verify tier routing and GPT-5.5 escalation rules.
+- Verify Free, Pro, and Premium routing plus the GPT-5.6 Sol escalation and fallback safeguards.
 - Review wording with youth-athlete safety in mind.
 - Launch behind a controlled feature flag only after safety and tier behavior are reviewed.

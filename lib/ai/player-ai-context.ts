@@ -89,7 +89,7 @@ const TIER_WINDOWS: Record<PlayerAiTier, ContextWindows> = {
     includeInjuries: false,
     includeLoad: false,
   },
-  low: {
+  pro: {
     wellnessDays: 7,
     trainingDays: 7,
     calendarDays: 7,
@@ -97,7 +97,7 @@ const TIER_WINDOWS: Record<PlayerAiTier, ContextWindows> = {
     includeInjuries: true,
     includeLoad: false,
   },
-  high: {
+  premium: {
     wellnessDays: 14,
     trainingDays: 28,
     calendarDays: 14,
@@ -530,7 +530,7 @@ export async function buildPlayerAiContextResult(params: {
   const context = lines
     .filter(Boolean)
     .join('\n')
-    .slice(0, params.tier === 'free' ? 2600 : params.tier === 'low' ? 4200 : 6500);
+    .slice(0, params.tier === 'free' ? 2600 : params.tier === 'pro' ? 4200 : 6500);
 
   const profileDebugSummary = getProfileDebugSummary(profile, now);
 

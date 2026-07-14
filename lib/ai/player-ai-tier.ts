@@ -5,7 +5,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { PlayerAiTier } from './model-config';
 
 function isPlayerAiTier(value: unknown): value is PlayerAiTier {
-  return value === 'free' || value === 'low' || value === 'high';
+  return value === 'free' || value === 'pro' || value === 'premium';
 }
 
 export async function resolvePlayerAiTier(params: {
@@ -25,4 +25,3 @@ export async function resolvePlayerAiTier(params: {
 
   return isPlayerAiTier(data?.tier) ? data.tier : 'free';
 }
-

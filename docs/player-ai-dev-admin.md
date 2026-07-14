@@ -42,10 +42,10 @@ Returns:
 curl -X POST "http://localhost:3000/api/player-ai/dev-admin" \
   -H "Content-Type: application/json" \
   -H "x-ai-dev-admin-token: YOUR_TOKEN" \
-  -d "{\"action\":\"set_tier\",\"user_id\":\"USER_UUID\",\"tier\":\"high\"}"
+  -d "{\"action\":\"set_tier\",\"user_id\":\"USER_UUID\",\"tier\":\"premium\"}"
 ```
 
-Valid tiers are `free`, `low`, and `high`.
+Valid tiers are `free`, `pro`, and `premium`.
 
 ## Reset Free Usage
 
