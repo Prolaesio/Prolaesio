@@ -33,7 +33,7 @@ export function InjuryTracker() {
           </h3>
           <p className="text-gray-300 text-xs leading-relaxed mb-3">
             The system has placed you in an active recovery protocol due to high pain levels logged over multiple days. 
-            This protocol will automatically clear when your logged pain is low (below 2.5) for two consecutive days.
+            This protocol will automatically clear after consecutive low-pain logs.
           </p>
         </div>
       )}

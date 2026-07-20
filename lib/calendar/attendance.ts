@@ -1,6 +1,7 @@
 import type { TeamCalendarItem } from '@/components/coach/calendar/types';
 import type { PlayerCalendarEvent } from '@/components/coach/players/types';
 import { parseCoachCalendarMeta } from '@/lib/calendar/events';
+import { resolvePlayerDisplayName } from '@/lib/player-names';
 import { supabase } from '@/lib/supabase';
 import type { CalendarEvent } from '@/lib/types';
 
@@ -178,7 +179,11 @@ export async function loadCoachAttendanceRoster(target: AttendanceEventTarget): 
 
   const players = ((data ?? []) as Record<string, unknown>[]).map((row) => ({
     playerId: String(row.player_id),
-    displayName: normalizeNullableText(row.display_name) ?? `Player ${String(row.player_id).slice(0, 8)}`,
+    displayName: resolvePlayerDisplayName({
+      displayName: normalizeNullableText(row.display_name),
+      email: normalizeNullableText(row.email),
+      userId: String(row.player_id),
+    }),
     email: normalizeNullableText(row.email),
     rsvpStatus: normalizeRsvpStatus(row.rsvp_status),
     rsvpUpdatedAt: normalizeNullableText(row.rsvp_updated_at),

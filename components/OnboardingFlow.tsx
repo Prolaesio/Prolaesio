@@ -21,6 +21,7 @@ import {
   WeeklyAvailability,
   CalendarEvent,
 } from '@/lib/types';
+import { getPlayerDisplayNameValidationError, normalizePlayerDisplayName } from '@/lib/player-names';
 import { POSITION_OPTIONS } from '@/lib/onboarding';
 import { joinTeamByCode } from '@/lib/teamMembership';
 import { WeeklyAvailabilityGrid } from './WeeklyAvailabilityGrid';
@@ -72,6 +73,7 @@ export function OnboardingFlow() {
   const [step, setStep] = useState<StepId>(1);
 
   // --- Step 1: Mandatory profile setup ---
+  const [displayName, setDisplayName] = useState<string>(profile?.displayName || '');
   const [dateOfBirth, setDateOfBirth] = useState<string>(profile?.dateOfBirth || '');
   const [heightCm, setHeightCm] = useState<string>(
     profile?.heightCm != null ? String(profile.heightCm) : ''
@@ -128,6 +130,7 @@ export function OnboardingFlow() {
   const buildProfilePatch = (overrides: Partial<UserProfile> = {}): UserProfile => ({
     age: computedAge ?? profile?.age ?? 18,
     dateOfBirth: dateOfBirth || profile?.dateOfBirth,
+    displayName: normalizePlayerDisplayName(displayName) ?? profile?.displayName,
     positions,
     priorities: profile?.priorities || [],
     heightCm: heightCm ? Number(heightCm) : profile?.heightCm,
@@ -146,6 +149,11 @@ export function OnboardingFlow() {
 
     if (!dateOfBirth) {
       setStep1Error('Please enter your birthday.');
+      return;
+    }
+    const displayNameError = getPlayerDisplayNameValidationError(displayName, { required: true });
+    if (displayNameError) {
+      setStep1Error(displayNameError);
       return;
     }
     if (computedAge === null || computedAge < 1 || computedAge > 99) {
@@ -318,6 +326,26 @@ export function OnboardingFlow() {
               />
 
               <form onSubmit={handleSubmitStep1} className="space-y-5">
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                    Display name
+                  </label>
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => {
+                      setDisplayName(e.target.value);
+                      setStep1Error('');
+                    }}
+                    maxLength={80}
+                    placeholder="e.g. Alex Morgan"
+                    className="w-full bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-xl p-3 text-white touch-target"
+                  />
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-gray-500">
+                    This is the name your coach will see. We recommend using your real name.
+                  </p>
+                </div>
+
                 {/* Birthday */}
                 <div>
                   <label className="block text-xs font-medium text-gray-400 mb-1.5">

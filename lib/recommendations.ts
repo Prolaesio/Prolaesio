@@ -1,6 +1,7 @@
 import { getReadinessZone, getReadinessZoneLabel, ReadinessResult, ReadinessZone } from './readiness';
 import { LoadResult, LoadRisk } from './training-load';
 import { CalendarEvent, InjuryRecord, TrainingLog, UserProfile, WellnessLog } from './types';
+import { shouldTreatPainAsInjury } from './injury-status';
 
 export type RecommendationKey = 'recovery' | 'light' | 'moderate' | 'intense';
 export type RecommendationLabel = 'Recovery' | 'Light' | 'Moderate' | 'Intense';
@@ -70,6 +71,13 @@ function hasPainNotes(context?: RecommendationContext): boolean {
   return Boolean(wellnessNotes || trainingNotes);
 }
 
+function hasLogInjury(context?: RecommendationContext): boolean {
+  return Boolean(
+    (context?.todayWellness && shouldTreatPainAsInjury(context.todayWellness)) ||
+      (context?.recentTrainingLogs ?? []).some(shouldTreatPainAsInjury)
+  );
+}
+
 function getPainSeverity(
   activeInjuries: InjuryRecord[],
   load: LoadResult,
@@ -80,8 +88,7 @@ function getPainSeverity(
   );
   const highestPain = getHighestPainLevel(context);
 
-  if (hasActiveOrRecoveringInjury || load.hasAutoInjury || highestPain >= 7) return 'serious';
-  if (highestPain >= 4) return 'moderate';
+  if (hasActiveOrRecoveringInjury || load.hasAutoInjury || hasLogInjury(context)) return 'serious';
   if (highestPain > 0 || hasPainNotes(context)) return 'minor';
   return 'none';
 }

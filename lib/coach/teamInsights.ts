@@ -21,10 +21,11 @@ import {
   describePainSignal,
   formatReportedAgo,
   getLatestPainStatus,
-  isPainReported,
+  shouldTreatPainAsInjury,
   sortPainSignalsNewestFirst,
   type PainStatusSignal,
 } from '@/lib/injury-status';
+import { resolvePlayerDisplayName } from '@/lib/player-names';
 
 interface TeamMembershipRow {
   team_id: string | null;
@@ -48,11 +49,6 @@ interface InjuryAlertRow {
   status: 'active' | 'recovering' | 'resolved';
   expected_return: string | null;
   created_at: string;
-}
-
-interface ProfileIdentityRow {
-  id: string;
-  full_name: string | null;
 }
 
 interface TeamPlayerNameRpcRow {
@@ -647,7 +643,11 @@ export async function loadCoachTeamInjuryAlertsForTeams(teams: TeamReference[]):
       if (!playerNameByUserId.has(row.user_id)) {
         playerNameByUserId.set(
           row.user_id,
-          row.display_name?.trim() || row.email?.split('@')[0] || `Player ${row.user_id.slice(0, 8)}`
+          resolvePlayerDisplayName({
+            displayName: row.display_name,
+            email: row.email,
+            userId: row.user_id,
+          })
         );
       }
     }
@@ -668,13 +668,13 @@ export async function loadCoachTeamInjuryAlertsForTeams(teams: TeamReference[]):
       .order('created_at', { ascending: false }),
     supabase
       .from('wellness_logs')
-      .select('id, user_id, date, pain_active, pain_level, pain_notes, created_at')
+      .select('id, user_id, date, pain_active, pain_level, pain_notes, is_injury, created_at')
       .in('user_id', userIds)
       .gte('date', recentDateKey)
       .order('date', { ascending: false }),
     supabase
       .from('training_logs')
-      .select('id, user_id, date, pain_active, pain_level, pain_notes, created_at')
+      .select('id, user_id, date, pain_active, pain_level, pain_notes, is_injury, created_at')
       .in('user_id', userIds)
       .gte('date', recentDateKey)
       .order('date', { ascending: false }),
@@ -720,6 +720,7 @@ export async function loadCoachTeamInjuryAlertsForTeams(teams: TeamReference[]):
     pain_active: boolean;
     pain_level: number | null;
     pain_notes: string | null;
+    is_injury?: boolean | null;
     created_at: string;
   };
 
@@ -735,6 +736,7 @@ export async function loadCoachTeamInjuryAlertsForTeams(teams: TeamReference[]):
         painActive: Boolean(row.pain_active),
         painLevel: row.pain_level,
         painNotes: row.pain_notes,
+        isInjury: row.is_injury ?? false,
       });
       painSignalsByUserId.set(row.user_id, signals);
     });
@@ -746,10 +748,10 @@ export async function loadCoachTeamInjuryAlertsForTeams(teams: TeamReference[]):
   const reportedPainAlerts = Array.from(painSignalsByUserId.entries()).flatMap(([userId, signals]) => {
     const sortedSignals = sortPainSignalsNewestFirst(signals);
     const latestStatus = getLatestPainStatus(sortedSignals);
-    const latestReport = sortedSignals.find(isPainReported);
+    const latestReport = sortedSignals.find(shouldTreatPainAsInjury);
     if (!latestReport) return [];
 
-    const isCurrent = Boolean(latestStatus && isPainReported(latestStatus));
+    const isCurrent = Boolean(latestStatus && shouldTreatPainAsInjury(latestStatus));
     return (teamIdsByUserId.get(userId) ?? []).map((teamId) => ({
       id: `${latestReport.source}-${latestReport.id}-${teamId}`,
       teamId,

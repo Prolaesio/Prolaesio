@@ -4,7 +4,9 @@ import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { useData } from '../lib/DataContext';
 import { Slider } from './ui/Slider';
 import { Toggle } from './ui/Toggle';
+import { InjuryStatusToggle } from './InjuryStatusToggle';
 import { WellnessLog } from '../lib/types';
+import { isAutomaticInjuryPainLevel } from '../lib/injury-status';
 import { format, isBefore, parseISO, subDays } from 'date-fns';
 
 interface WellnessFormProps {
@@ -25,8 +27,11 @@ export function WellnessForm({ onSaved, selectedDate }: WellnessFormProps) {
   const [painActive, setPainActive] = useState(false);
   const [painLevel, setPainLevel] = useState(1);
   const [painNotes, setPainNotes] = useState('');
+  const [manualInjury, setManualInjury] = useState(false);
   const [notes, setNotes] = useState('');
   const sleepTimesTouchedRef = useRef(false);
+  const automaticallyTreatAsInjury = painActive && isAutomaticInjuryPainLevel(painLevel);
+  const isInjury = painActive && (manualInjury || automaticallyTreatAsInjury);
 
   const getPreviousSleepTimes = useCallback(() => {
     const selectedDateObj = parseISO(selectedDate);
@@ -61,6 +66,7 @@ export function WellnessForm({ onSaved, selectedDate }: WellnessFormProps) {
       setPainActive(existingLog.painActive);
       setPainLevel(existingLog.painLevel || 1);
       setPainNotes(existingLog.painNotes || '');
+      setManualInjury(existingLog.isInjury ?? false);
       setNotes(existingLog.notes || '');
     } else {
       // Defaults map to "average"
@@ -76,9 +82,17 @@ export function WellnessForm({ onSaved, selectedDate }: WellnessFormProps) {
       setPainActive(false);
       setPainLevel(1);
       setPainNotes('');
+      setManualInjury(false);
       setNotes('');
     }
   }, [existingLog, selectedDate, wellnessLogs, getPreviousSleepTimes]);
+
+  const handlePainActiveChange = (checked: boolean) => {
+    setPainActive(checked);
+    if (!checked) {
+      setManualInjury(false);
+    }
+  };
 
   const calculateDuration = () => {
     const sl = sleepTime.split(':').map(Number);
@@ -105,6 +119,7 @@ export function WellnessForm({ onSaved, selectedDate }: WellnessFormProps) {
       painActive,
       painLevel: painActive ? painLevel : undefined,
       painNotes: painActive ? painNotes : undefined,
+      isInjury,
       notes,
     };
     saveWellnessLog(log);
@@ -160,11 +175,18 @@ export function WellnessForm({ onSaved, selectedDate }: WellnessFormProps) {
 
       <div className="glass-card p-5 mb-6">
         <h3 className="text-[#ff6b6b] font-bold uppercase tracking-wider text-xs mb-4">Pain & Injury</h3>
-        <Toggle label="Are you experiencing unusual pain?" checked={painActive} onChange={setPainActive} />
+        <Toggle label="Are you experiencing unusual pain?" checked={painActive} onChange={handlePainActiveChange} />
         
         {painActive && (
           <div className="mt-4 animate-slide-up bg-[rgba(255,107,107,0.1)] p-4 rounded-xl border border-[rgba(255,107,107,0.2)]">
-            <Slider label="Pain Level (3.5+ triggers auto-injury)" value={painLevel} min={1} max={10} onChangeValue={setPainLevel} />
+            <Slider label="Pain Level" value={painLevel} min={1} max={10} onChangeValue={setPainLevel} />
+            <div className="mt-4">
+              <InjuryStatusToggle
+                checked={isInjury}
+                automaticallyEnabled={automaticallyTreatAsInjury}
+                onChange={setManualInjury}
+              />
+            </div>
             <div className="mt-4">
               <label className="block text-xs font-medium text-[#ff6b6b] mb-1">Pain Location & Description</label>
               <textarea 

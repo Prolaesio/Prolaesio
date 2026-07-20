@@ -1,4 +1,5 @@
 import { SessionType, SprintingOption, TrainingLog, WellnessLog } from './types';
+import { shouldTreatPainAsInjury } from './injury-status';
 import { differenceInDays, parseISO } from 'date-fns';
 
 export interface LoadResult {
@@ -169,23 +170,19 @@ export function analyzeTrainingLoad(
     }
   }
 
-  // Pain-to-injury auto-detection: painLevel > 3.5 for > 1.5 days -> auto-injury
-  // clear when painLevel < 2.5 for 2+ consecutive days
-  let hasAutoInjury = false;
-
-  // We look at the last few days in sequence
-  // For simplicity, if the last 2 wellness logs both report painActive and painLevel > 3.5, it's flagged.
-  // It unflags if the last 2 logs report painLevel < 2.5
-  if (recentWellness.length >= 2) {
-    const day1 = recentWellness[0];
-    const day2 = recentWellness[1];
-
-    if (day1.painActive && day2.painActive && (day1.painLevel || 0) > 3.5 && (day2.painLevel || 0) > 3.5) {
-      hasAutoInjury = true;
-    } else if ((day1.painLevel || 0) < 2.5 && (day2.painLevel || 0) < 2.5) {
-      hasAutoInjury = false;
-    }
-  }
+  const recentTrainingWithPain = trainingLogs.filter((log) => {
+    const daysAgo = differenceInDays(today, parseISO(log.date));
+    return daysAgo >= 0 && daysAgo <= 7;
+  });
+  const recentPainSignals = [...recentWellness, ...recentTrainingWithPain];
+  const latestPainSignalDate = recentPainSignals
+    .map((log) => log.date)
+    .sort((first, second) => second.localeCompare(first))[0];
+  const hasAutoInjury = latestPainSignalDate
+    ? recentPainSignals
+        .filter((log) => log.date === latestPainSignalDate)
+        .some(shouldTreatPainAsInjury)
+    : false;
 
   const last7DailyLoads = dailyLoads.slice(0, 7);
   const weeklyLoad = last7DailyLoads.reduce((sum, load) => sum + load, 0);
@@ -206,14 +203,14 @@ export function analyzeTrainingLoad(
     if (latestWellness.fatigue >= 8 && ratio > 1.25) wellnessModifier -= 18;
     else if (latestWellness.fatigue >= 7 && ratio > 1.25) wellnessModifier -= 10;
 
-    if (latestWellness.painActive && (latestWellness.painLevel || 0) >= 4) wellnessModifier -= 20;
+    if (shouldTreatPainAsInjury(latestWellness)) wellnessModifier -= 20;
     if (latestWellness.sleepDuration < 6 && ratio > 1.25) wellnessModifier -= 10;
     if (latestWellness.stress >= 8 && ratio > 1.25) wellnessModifier -= 8;
   }
 
   const recentPainSession = trainingLogs.some((log) => {
     const daysAgo = differenceInDays(today, parseISO(log.date));
-    return daysAgo >= 0 && daysAgo < 7 && log.painActive && (log.painLevel || 0) >= 4;
+    return daysAgo >= 0 && daysAgo < 7 && shouldTreatPainAsInjury(log);
   });
   if (recentPainSession) wellnessModifier -= 10;
 

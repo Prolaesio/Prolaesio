@@ -5,7 +5,7 @@ import { WellnessForm } from '@/components/WellnessForm';
 import { TrainingForm } from '@/components/TrainingForm';
 import { useData } from '@/lib/DataContext';
 import { format, subDays, addDays, parseISO, isValid } from 'date-fns';
-import { ChevronLeft, ChevronRight, CheckCircle2, Heart, Dumbbell, Moon, Zap, Activity, MoreVertical, Pencil, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle2, Heart, Dumbbell, Moon, Zap, Activity, MoreVertical, Pencil, Trash2, ShieldAlert } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { SESSION_TYPES, SessionType, TrainingLog } from '@/lib/types';
 
@@ -243,7 +243,14 @@ export default function LogPage() {
                     </div>
                     {selectedWellness.painActive && (
                       <div className="mt-3 p-2 rounded-lg bg-[rgba(255,107,107,0.1)] border border-[rgba(255,107,107,0.2)]">
-                        <p className="text-xs text-[#ff6b6b] font-medium">Pain Level: {selectedWellness.painLevel}/10</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-xs text-[#ff6b6b] font-medium">Pain Level: {selectedWellness.painLevel}/10</p>
+                          {selectedWellness.isInjury ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-[rgba(255,107,107,0.45)] bg-[rgba(255,107,107,0.14)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#ff6b6b]">
+                              <ShieldAlert size={11} /> Injury
+                            </span>
+                          ) : null}
+                        </div>
                         {selectedWellness.painNotes && <p className="text-xs text-gray-400 mt-1">{selectedWellness.painNotes}</p>}
                       </div>
                     )}
@@ -335,6 +342,19 @@ export default function LogPage() {
                     </div>
                     {training.notes && (
                       <p className="text-xs text-gray-400 mt-3 italic">&ldquo;{training.notes}&rdquo;</p>
+                    )}
+                    {training.painActive && (
+                      <div className="mt-3 p-2 rounded-lg bg-[rgba(255,107,107,0.1)] border border-[rgba(255,107,107,0.2)]">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-xs text-[#ff6b6b] font-medium">Pain Level: {training.painLevel}/10</p>
+                          {training.isInjury ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-[rgba(255,107,107,0.45)] bg-[rgba(255,107,107,0.14)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#ff6b6b]">
+                              <ShieldAlert size={11} /> Injury
+                            </span>
+                          ) : null}
+                        </div>
+                        {training.painNotes && <p className="text-xs text-gray-400 mt-1">{training.painNotes}</p>}
+                      </div>
                     )}
                   </div>
                 </div>

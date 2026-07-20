@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useMemo, useState } from 'react';
+import { type MouseEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import {
   ArrowUpRight,
@@ -12,6 +12,7 @@ import {
   Layers,
   LineChart,
   Users,
+  X,
 } from 'lucide-react';
 import { CoachAttendanceModal } from '@/components/coach/attendance/CoachAttendanceModal';
 import { FloatingAttendanceButton } from '@/components/coach/attendance/FloatingAttendanceButton';
@@ -23,6 +24,7 @@ import {
 } from '@/lib/calendar/attendance';
 import { useCoachAllTeamsCalendarItems, useCoachTeamInjuryAlerts, useCoachTeamProfileAverages } from '@/lib/coach/teamInsights';
 import { useCoachTeam } from '@/lib/coach/selectedTeam';
+import { usePersistedState } from '@/lib/usePersistedState';
 
 interface TeamStatusBadge {
   label: string;
@@ -102,6 +104,23 @@ const quickActions = [
   },
 ];
 
+const DISMISSED_ALERT_IDS_STORAGE_KEY = 'lodario:coach-dashboard:dismissed-alert-ids';
+const EMPTY_DISMISSED_ALERT_IDS: string[] = [];
+
+function normalizeDismissedAlertIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return Array.from(
+    new Set(
+      value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    )
+  );
+}
+
+function stringArraysMatch(first: string[], second: string[]): boolean {
+  return first.length === second.length && first.every((item, index) => item === second[index]);
+}
+
 export function CoachDashboardPage() {
   const { teams, selectedTeam, selectedTeamId, setSelectedTeamId } = useCoachTeam();
   const [floatingAttendance, setFloatingAttendance] = useState<{
@@ -114,6 +133,18 @@ export function CoachDashboardPage() {
   const { averagesByTeamId: profileAveragesByTeamId, isLoading: isLoadingPlayerCounts, error: playerCountError } = useCoachTeamProfileAverages(teamIds);
   const { items: allTeamsCalendarItems, isLoading: isLoadingCalendarItems, error: calendarItemsError } = useCoachAllTeamsCalendarItems(teams);
   const { alerts: injuryAlerts, isLoading: isLoadingInjuryAlerts, error: injuryAlertsError } = useCoachTeamInjuryAlerts(teams);
+  const [storedDismissedAlertIds, setStoredDismissedAlertIds] = usePersistedState<unknown>(
+    DISMISSED_ALERT_IDS_STORAGE_KEY,
+    EMPTY_DISMISSED_ALERT_IDS,
+    { storage: 'local' }
+  );
+  const dismissedAlertIds = useMemo(() => normalizeDismissedAlertIds(storedDismissedAlertIds), [storedDismissedAlertIds]);
+
+  useEffect(() => {
+    if (!Array.isArray(storedDismissedAlertIds) || !stringArraysMatch(storedDismissedAlertIds, dismissedAlertIds)) {
+      setStoredDismissedAlertIds(dismissedAlertIds);
+    }
+  }, [dismissedAlertIds, setStoredDismissedAlertIds, storedDismissedAlertIds]);
 
   const teamCards = useMemo<TeamCardData[]>(() => {
     return teams.map((team) => ({
@@ -245,6 +276,23 @@ export function CoachDashboardPage() {
       .sort((first, second) => second.sortKey - first.sortKey)
       .slice(0, 8);
   }, [injuryAlerts, teamCards, teamNameById]);
+
+  const visibleRecentAlerts = useMemo(() => {
+    const dismissedIds = new Set(dismissedAlertIds);
+    return recentAlerts.filter((alert) => !dismissedIds.has(alert.id));
+  }, [dismissedAlertIds, recentAlerts]);
+
+  const handleDismissAlert = useCallback((
+    alertId: string,
+    event: MouseEvent<HTMLButtonElement>
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setStoredDismissedAlertIds((current: unknown) => {
+      const nextIds = normalizeDismissedAlertIds(current);
+      return nextIds.includes(alertId) ? nextIds : [...nextIds, alertId];
+    });
+  }, [setStoredDismissedAlertIds]);
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
@@ -437,17 +485,25 @@ export function CoachDashboardPage() {
           </div>
           {injuryAlertsError ? <p className="mb-2 text-xs text-[var(--status-red)]">Unable to load injury alerts: {injuryAlertsError}</p> : null}
           {isLoadingInjuryAlerts ? <p className="mb-2 text-xs text-gray-400">Loading injury alerts...</p> : null}
-          {recentAlerts.length === 0 ? (
+          {visibleRecentAlerts.length === 0 ? (
             <div className="rounded-xl border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] px-3.5 py-3 text-sm text-gray-300">
               No alerts triggered from current team data.
             </div>
           ) : (
             <div className="space-y-2.5">
-              {recentAlerts.map((alert) => (
+              {visibleRecentAlerts.map((alert) => (
                 <article
                   key={alert.id}
-                  className="rounded-xl border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] px-3.5 py-3"
+                  className="relative rounded-xl border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] px-3.5 py-3 pr-10"
                 >
+                  <button
+                    type="button"
+                    aria-label="Dismiss alert"
+                    onClick={(event) => handleDismissAlert(alert.id, event)}
+                    className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-white focus:outline-none focus:ring-2 focus:ring-[rgba(var(--accent-secondary-rgb),0.45)]"
+                  >
+                    <X size={14} />
+                  </button>
                   <p className="text-sm font-semibold text-white">{alert.teamName}</p>
                   <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <p className={`min-w-0 flex-1 text-xs ${alert.toneClass}`}>{alert.message}</p>

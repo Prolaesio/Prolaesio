@@ -8,20 +8,29 @@ export function usePersistedState<T>(
   options: { storage?: 'local' | 'session' } = {}
 ): [T, Dispatch<SetStateAction<T>>] {
   const storageType = options.storage ?? 'session';
+  const storageIdentity = `${storageType}:${key}`;
+  const [loadedStorageIdentity, setLoadedStorageIdentity] = useState<string | null>(null);
   const [value, setValue] = useState<T>(() => {
     if (typeof window === 'undefined') return initialValue;
-
-    try {
-      const storage = storageType === 'local' ? window.localStorage : window.sessionStorage;
-      const stored = storage.getItem(key);
-      return stored ? (JSON.parse(stored) as T) : initialValue;
-    } catch {
-      return initialValue;
-    }
+    return initialValue;
   });
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    try {
+      const storage = storageType === 'local' ? window.localStorage : window.sessionStorage;
+      const stored = storage.getItem(key);
+      setValue(stored ? (JSON.parse(stored) as T) : initialValue);
+    } catch {
+      setValue(initialValue);
+    } finally {
+      setLoadedStorageIdentity(storageIdentity);
+    }
+  }, [initialValue, key, storageIdentity, storageType]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || loadedStorageIdentity !== storageIdentity) return;
 
     try {
       const storage = storageType === 'local' ? window.localStorage : window.sessionStorage;
@@ -32,7 +41,7 @@ export function usePersistedState<T>(
         storage.setItem(key, serialized);
       }
     } catch {}
-  }, [key, storageType, value]);
+  }, [key, loadedStorageIdentity, storageIdentity, storageType, value]);
 
   return [value, setValue];
 }

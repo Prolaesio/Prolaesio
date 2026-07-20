@@ -2,6 +2,8 @@ import { differenceInCalendarDays, format, parseISO } from 'date-fns';
 
 export type PainSignalSource = 'wellness' | 'training';
 
+export const AUTOMATIC_INJURY_PAIN_THRESHOLD = 4.5;
+
 export interface PainStatusSignal {
   id: string;
   date: string;
@@ -10,10 +12,21 @@ export interface PainStatusSignal {
   painActive: boolean;
   painLevel?: number | null;
   painNotes?: string | null;
+  isInjury?: boolean | null;
+}
+
+export function isAutomaticInjuryPainLevel(painLevel: number | null | undefined): boolean {
+  return typeof painLevel === 'number' && Number.isFinite(painLevel) && painLevel >= AUTOMATIC_INJURY_PAIN_THRESHOLD;
+}
+
+export function shouldTreatPainAsInjury(
+  signal: Pick<PainStatusSignal, 'painActive' | 'painLevel' | 'isInjury'>
+): boolean {
+  return Boolean(signal.isInjury) || Boolean(signal.painActive && isAutomaticInjuryPainLevel(signal.painLevel));
 }
 
 export function isPainReported(signal: PainStatusSignal): boolean {
-  return signal.painActive || Boolean(signal.painNotes?.trim());
+  return signal.painActive || Boolean(signal.painNotes?.trim()) || shouldTreatPainAsInjury(signal);
 }
 
 export function sortPainSignalsNewestFirst(signals: PainStatusSignal[]): PainStatusSignal[] {
@@ -32,7 +45,8 @@ export function describePainSignal(signal: PainStatusSignal): string {
   const notes = signal.painNotes?.trim();
   if (notes) return notes;
   if (signal.painLevel) {
-    return `${signal.source === 'wellness' ? 'Morning wellness' : 'Training'} pain reported (level ${signal.painLevel}/10)`;
+    const signalType = shouldTreatPainAsInjury(signal) ? 'injury' : 'pain';
+    return `${signal.source === 'wellness' ? 'Morning wellness' : 'Training'} ${signalType} reported (level ${signal.painLevel}/10)`;
   }
   return signal.source === 'wellness'
     ? 'Morning wellness injury/pain reported'

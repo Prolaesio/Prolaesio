@@ -7,6 +7,7 @@ import {
   type RecommendationResult,
 } from './recommendations';
 import { calculateSessionLoad, type LoadResult } from './training-load';
+import { shouldTreatPainAsInjury } from './injury-status';
 import type { CalendarEvent, InjuryRecord, TrainingLog, UserProfile, WellnessLog } from './types';
 
 export type WellnessLogInput = WellnessLog[] | Record<string, WellnessLog> | null | undefined;
@@ -221,7 +222,7 @@ function getRecentLogs<T extends { date: string }>(logs: T[], startKey: string, 
 }
 
 function hasPain(log: WellnessLog | TrainingLog): boolean {
-  return Boolean(log.painActive || (log.painLevel ?? 0) > 0 || log.painNotes?.trim());
+  return Boolean(log.painActive || (log.painLevel ?? 0) > 0 || log.painNotes?.trim() || shouldTreatPainAsInjury(log));
 }
 
 function getHighestPainLevel(wellnessLogs: WellnessLog[], trainingLogs: TrainingLog[]): number | null {

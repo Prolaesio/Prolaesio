@@ -6,10 +6,12 @@ import { UserProfile, Position, Priority } from '../lib/types';
 import { Loader2, Save } from 'lucide-react';
 import { differenceInYears, parseISO } from 'date-fns';
 import { joinTeamByCode } from '@/lib/teamMembership';
+import { getPlayerDisplayNameValidationError, normalizePlayerDisplayName } from '@/lib/player-names';
 
 export function ProfileForm() {
   const { profile, saveProfile } = useData();
 
+  const [displayName, setDisplayName] = useState<string>('');
   const [dateOfBirth, setDateOfBirth] = useState<string>('');
   const [heightCm, setHeightCm] = useState<string>('');
   const [weightKg, setWeightKg] = useState<string>('');
@@ -17,6 +19,7 @@ export function ProfileForm() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [priorities, setPriorities] = useState<Priority[]>([]);
   const [error, setError] = useState<string>('');
+  const [saved, setSaved] = useState(false);
   const [teamJoinFeedback, setTeamJoinFeedback] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [joiningTeam, setJoiningTeam] = useState(false);
 
@@ -28,6 +31,7 @@ export function ProfileForm() {
 
   useEffect(() => {
     if (profile) {
+      setDisplayName(profile.displayName || '');
       setDateOfBirth(profile.dateOfBirth || '');
       setHeightCm(profile.heightCm != null ? String(profile.heightCm) : '');
       setWeightKg(profile.weightKg != null ? String(profile.weightKg) : '');
@@ -71,6 +75,15 @@ export function ProfileForm() {
       return;
     }
 
+    const normalizedDisplayName = normalizePlayerDisplayName(displayName);
+    const displayNameError = getPlayerDisplayNameValidationError(displayName, {
+      required: Boolean(profile?.displayName) || displayName.trim().length > 0,
+    });
+    if (displayNameError) {
+      setError(displayNameError);
+      return;
+    }
+
     const heightNum = heightCm ? Number(heightCm) : undefined;
     if (heightCm && (Number.isNaN(heightNum!) || heightNum! <= 0 || heightNum! > 260)) {
       setError('Please enter a valid height in centimeters.');
@@ -87,6 +100,7 @@ export function ProfileForm() {
       ...profile,
       age: computedAge,
       dateOfBirth,
+      displayName: normalizedDisplayName ?? undefined,
       positions,
       priorities,
       heightCm: heightNum,
@@ -97,7 +111,8 @@ export function ProfileForm() {
       onboardingCompleted: profile?.onboardingCompleted ?? true,
     };
     saveProfile(next);
-    alert('Profile saved successfully');
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 2000);
   };
 
   const handleJoinTeam = async () => {
@@ -174,6 +189,25 @@ export function ProfileForm() {
   return (
     <form onSubmit={handleSubmit} className="glass-card p-5 mt-6 animate-slide-up">
       <h3 className="text-[var(--accent-primary)] font-bold uppercase tracking-wider text-xs mb-4">Player Profile</h3>
+
+      <div className="mb-6">
+        <label className="block text-xs font-medium text-gray-400 mb-2">Display name</label>
+        <input
+          type="text"
+          value={displayName}
+          onChange={(e) => {
+            setDisplayName(e.target.value);
+            setError('');
+            setSaved(false);
+          }}
+          maxLength={80}
+          placeholder="e.g. Alex Morgan"
+          className="w-full bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg p-3 text-white touch-target"
+        />
+        <p className="mt-1.5 text-[11px] leading-relaxed text-gray-500">
+          This is the name your coach will see. We recommend using your real name.
+        </p>
+      </div>
       
       <div className="mb-6">
         <label className="block text-xs font-medium text-gray-400 mb-2">Date of Birth</label>
@@ -278,6 +312,12 @@ export function ProfileForm() {
       {error && (
         <div className="mb-4 p-3 rounded-xl bg-[rgba(255,107,107,0.1)] border border-[rgba(255,107,107,0.3)] text-[#ff6b6b] text-xs font-medium animate-fade-in">
           {error}
+        </div>
+      )}
+
+      {saved && (
+        <div className="mb-4 p-3 rounded-xl bg-[rgba(var(--status-green-rgb),0.1)] border border-[rgba(var(--status-green-rgb),0.3)] text-[var(--status-green)] text-xs font-medium animate-fade-in">
+          Profile saved successfully.
         </div>
       )}
 

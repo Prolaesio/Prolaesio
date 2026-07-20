@@ -27,6 +27,7 @@ export interface UserProfile {
   age: number; // 1-99 (computed from dateOfBirth)
   dateOfBirth?: string; // YYYY-MM-DD
   role?: 'player' | 'coach';
+  displayName?: string;
   positions: Position[];
   priorities: Priority[];
   // --- Onboarding additions (all optional so existing profiles keep working) ---
@@ -135,6 +136,7 @@ export interface WellnessLog {
   painActive: boolean;
   painLevel?: number; // 1-10
   painNotes?: string;
+  isInjury?: boolean;
   notes?: string;
 }
 
@@ -154,6 +156,7 @@ export interface TrainingLog {
   painActive: boolean;
   painLevel?: number; // 1-10
   painNotes?: string;
+  isInjury?: boolean;
   notes?: string;
 }
 

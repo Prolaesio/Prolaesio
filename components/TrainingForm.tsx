@@ -4,7 +4,9 @@ import React, { useEffect, useState } from 'react';
 import { useData } from '../lib/DataContext';
 import { Slider } from './ui/Slider';
 import { Toggle } from './ui/Toggle';
+import { InjuryStatusToggle } from './InjuryStatusToggle';
 import { TrainingLog, SESSION_TYPES, SessionType, SprintingOption } from '../lib/types';
+import { isAutomaticInjuryPainLevel } from '../lib/injury-status';
 import { v4 as uuidv4 } from 'uuid';
 
 interface TrainingFormProps {
@@ -36,10 +38,13 @@ export function TrainingForm({ onSaved, selectedDate, initialValues }: TrainingF
   const [painActive, setPainActive] = useState<boolean>(false);
   const [painLevel, setPainLevel] = useState<number>(1);
   const [painNotes, setPainNotes] = useState<string>('');
+  const [manualInjury, setManualInjury] = useState<boolean>(false);
   const [notes, setNotes] = useState<string>('');
 
   const [error, setError] = useState<string>('');
   const isEditing = !!initialValues?.id;
+  const automaticallyTreatAsInjury = painActive && isAutomaticInjuryPainLevel(painLevel);
+  const isInjury = painActive && (manualInjury || automaticallyTreatAsInjury);
 
   useEffect(() => {
     const nextSessionType = initialValues?.sessionType || 'Team';
@@ -53,12 +58,20 @@ export function TrainingForm({ onSaved, selectedDate, initialValues }: TrainingF
     setPainActive(initialValues?.painActive ?? false);
     setPainLevel(initialValues?.painLevel || 1);
     setPainNotes(initialValues?.painNotes || '');
+    setManualInjury(initialValues?.isInjury ?? false);
     setNotes(initialValues?.notes || '');
   }, [initialValues, selectedDate]);
 
   const handleSessionTypeChange = (type: SessionType) => {
     setSessionType(type);
     setPerformanceEnabled(defaultPerformanceEnabled(type));
+  };
+
+  const handlePainActiveChange = (checked: boolean) => {
+    setPainActive(checked);
+    if (!checked) {
+      setManualInjury(false);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -83,6 +96,7 @@ export function TrainingForm({ onSaved, selectedDate, initialValues }: TrainingF
       painActive,
       painLevel: painActive ? painLevel : undefined,
       painNotes: painActive ? painNotes : undefined,
+      isInjury,
       notes,
     };
     saveTrainingLog(log);
@@ -91,6 +105,7 @@ export function TrainingForm({ onSaved, selectedDate, initialValues }: TrainingF
     setDistance('');
     setNotes('');
     setPainActive(false);
+    setManualInjury(false);
   };
 
   return (
@@ -224,11 +239,18 @@ export function TrainingForm({ onSaved, selectedDate, initialValues }: TrainingF
       <div className="glass-card p-5 mb-6">
         <h3 className="text-[#ff6b6b] font-bold uppercase tracking-wider text-xs mb-4">Pain & Notes</h3>
         
-        <Toggle label="Pain during/after session?" checked={painActive} onChange={setPainActive} />
+        <Toggle label="Pain during/after session?" checked={painActive} onChange={handlePainActiveChange} />
         
         {painActive && (
           <div className="mt-4 animate-slide-up bg-[rgba(255,107,107,0.1)] p-4 rounded-xl border border-[rgba(255,107,107,0.2)]">
             <Slider label="Pain Level" value={painLevel} min={1} max={10} onChangeValue={setPainLevel} />
+            <div className="mt-4">
+              <InjuryStatusToggle
+                checked={isInjury}
+                automaticallyEnabled={automaticallyTreatAsInjury}
+                onChange={setManualInjury}
+              />
+            </div>
             <div className="mt-4">
               <label className="block text-xs font-medium text-[#ff6b6b] mb-1">Pain Location</label>
               <textarea 

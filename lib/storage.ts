@@ -8,6 +8,8 @@ import {
   CustomEventType,
   InjuryRecord,
 } from './types';
+import { normalizePlayerDisplayName } from './player-names';
+import { shouldTreatPainAsInjury } from './injury-status';
 
 export class StorageService {
   private static isMissingCalendarDescriptionError(error: { message?: string | null; details?: string | null } | null | undefined): boolean {
@@ -61,6 +63,7 @@ export class StorageService {
       age: data.age,
       dateOfBirth: data.date_of_birth ?? undefined,
       role: data.role ?? undefined,
+      displayName: data.display_name ?? undefined,
       positions: data.positions || [],
       priorities: data.priorities || [],
       heightCm: data.height_cm != null ? Number(data.height_cm) : undefined,
@@ -82,6 +85,7 @@ export class StorageService {
         id: user.id,
         age: profile.age,
         date_of_birth: profile.dateOfBirth ?? null,
+        display_name: normalizePlayerDisplayName(profile.displayName) ?? null,
         positions: profile.positions,
         priorities: profile.priorities,
         height_cm: profile.heightCm ?? null,
@@ -118,6 +122,11 @@ export class StorageService {
         painActive: row.pain_active,
         painLevel: row.pain_level ?? undefined,
         painNotes: row.pain_notes ?? undefined,
+        isInjury: shouldTreatPainAsInjury({
+          painActive: Boolean(row.pain_active),
+          painLevel: row.pain_level ?? undefined,
+          isInjury: row.is_injury ?? false,
+        }),
         notes: row.notes ?? undefined,
       };
     });
@@ -144,6 +153,7 @@ export class StorageService {
         pain_active: log.painActive,
         pain_level: log.painLevel ?? null,
         pain_notes: log.painNotes ?? null,
+        is_injury: log.painActive ? shouldTreatPainAsInjury(log) : false,
         notes: log.notes ?? null,
       }, { onConflict: 'user_id,date' });
 
@@ -171,6 +181,11 @@ export class StorageService {
       painActive: row.pain_active,
       painLevel: row.pain_level ?? undefined,
       painNotes: row.pain_notes ?? undefined,
+      isInjury: shouldTreatPainAsInjury({
+        painActive: Boolean(row.pain_active),
+        painLevel: row.pain_level ?? undefined,
+        isInjury: row.is_injury ?? false,
+      }),
       notes: row.notes ?? undefined,
     }));
   }
@@ -194,6 +209,7 @@ export class StorageService {
         pain_active: log.painActive,
         pain_level: log.painLevel ?? null,
         pain_notes: log.painNotes ?? null,
+        is_injury: log.painActive ? shouldTreatPainAsInjury(log) : false,
         notes: log.notes ?? null,
       }, { onConflict: 'id' });
 

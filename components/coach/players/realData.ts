@@ -7,9 +7,10 @@ import {
   describePainSignal,
   formatReportedAgo,
   getLatestPainStatus,
-  isPainReported,
+  shouldTreatPainAsInjury,
   type PainStatusSignal,
 } from '@/lib/injury-status';
+import { resolvePlayerDisplayName } from '@/lib/player-names';
 import {
   dedupeCalendarEventsById,
   isBuiltInActivityEventType,
@@ -54,6 +55,7 @@ interface WellnessRow {
   pain_notes: string | null;
   pain_active: boolean;
   pain_level: number | null;
+  is_injury?: boolean | null;
 }
 
 interface TrainingRow {
@@ -68,6 +70,7 @@ interface TrainingRow {
   performance: number | null;
   pain_active: boolean;
   pain_level: number | null;
+  is_injury?: boolean | null;
   notes: string | null;
   pain_notes: string | null;
 }
@@ -366,6 +369,7 @@ function buildPainSignals(
       painActive: Boolean(row.pain_active),
       painLevel: row.pain_level,
       painNotes: row.pain_notes,
+      isInjury: row.is_injury ?? false,
     })),
     ...trainingRows.map((row) => ({
       id: `training-${row.id}`,
@@ -375,6 +379,7 @@ function buildPainSignals(
       painActive: Boolean(row.pain_active),
       painLevel: row.pain_level,
       painNotes: row.pain_notes,
+      isInjury: row.is_injury ?? false,
     })),
   ];
 }
@@ -404,7 +409,7 @@ function resolveInjuryStatus(
   }
 
   const latestPainStatus = getLatestPainStatus(buildPainSignals(wellnessRows, trainingRows));
-  if (latestPainStatus && isPainReported(latestPainStatus)) {
+  if (latestPainStatus && shouldTreatPainAsInjury(latestPainStatus)) {
     return {
       state: 'active',
       description: describePainSignal(latestPainStatus),
@@ -457,6 +462,11 @@ function mapWellnessRowsToWellnessLogs(rows: WellnessRow[]): WellnessLog[] {
     painActive: Boolean(row.pain_active),
     painLevel: row.pain_level == null ? undefined : toNumber(row.pain_level),
     painNotes: row.pain_notes ?? undefined,
+    isInjury: shouldTreatPainAsInjury({
+      painActive: Boolean(row.pain_active),
+      painLevel: row.pain_level == null ? undefined : toNumber(row.pain_level),
+      isInjury: row.is_injury ?? false,
+    }),
     notes: row.notes ?? undefined,
   }));
 }
@@ -473,6 +483,11 @@ function mapTrainingRowsToTrainingLogs(rows: TrainingRow[]): TrainingLog[] {
     painActive: Boolean(row.pain_active),
     painLevel: row.pain_level == null ? undefined : toNumber(row.pain_level),
     painNotes: row.pain_notes ?? undefined,
+    isInjury: shouldTreatPainAsInjury({
+      painActive: Boolean(row.pain_active),
+      painLevel: row.pain_level == null ? undefined : toNumber(row.pain_level),
+      isInjury: row.is_injury ?? false,
+    }),
     notes: row.notes ?? undefined,
   }));
 }
@@ -807,12 +822,12 @@ export async function loadRealTeamPlayerDatasets(teamId: string): Promise<{ data
   const [wellnessResult, trainingResult, calendarResult, eventTypeActivityResult, injuriesResult] = await Promise.all([
     supabase
       .from('wellness_logs')
-      .select('user_id, date, created_at, energy, fatigue, stress, sleep_quality, sleep_duration, sleep_time, wake_time, notes, pain_notes, pain_active, pain_level')
+      .select('user_id, date, created_at, energy, fatigue, stress, sleep_quality, sleep_duration, sleep_time, wake_time, notes, pain_notes, pain_active, pain_level, is_injury')
       .in('user_id', playerIds)
       .order('date', { ascending: true }),
     supabase
       .from('training_logs')
-      .select('id, user_id, date, created_at, duration, intensity, session_type, sprinting, performance, pain_active, pain_level, notes, pain_notes')
+      .select('id, user_id, date, created_at, duration, intensity, session_type, sprinting, performance, pain_active, pain_level, is_injury, notes, pain_notes')
       .in('user_id', playerIds)
       .order('date', { ascending: true }),
     loadCalendarRowsForPlayers(playerIds),
@@ -870,7 +885,12 @@ export async function loadRealTeamPlayerDatasets(teamId: string): Promise<{ data
     const coachPlayer: CoachPlayer = {
       id: row.user_id,
       teamId,
-      name: row.display_name || row.email || `Player ${index + 1}`,
+      name: resolvePlayerDisplayName({
+        displayName: row.display_name,
+        email: row.email,
+        userId: row.user_id,
+        fallbackLabel: `Player ${index + 1}`,
+      }),
       jerseyNumber: index + 1,
       positions: row.positions ?? [],
       age: toNumber(row.age, 0),
