@@ -233,6 +233,7 @@ function CalendarView({
   playerDataset,
   teamPlayerIds,
   editingEvent,
+  editingInstanceDate,
   editingSourceEventIds,
   onEventCreated,
   onEditEvent,
@@ -242,6 +243,7 @@ function CalendarView({
   playerDataset: TeamPlayerDataset;
   teamPlayerIds: string[];
   editingEvent: TeamPlayerDataset['calendarEvents'][number] | null;
+  editingInstanceDate: string | null;
   editingSourceEventIds: string[];
   onEventCreated: () => void;
   onEditEvent: (occurrence: SelectedOccurrence) => void;
@@ -262,6 +264,7 @@ function CalendarView({
         teamId={playerDataset.player.teamId}
         teamPlayerIds={teamPlayerIds}
         editingEvent={editingEvent}
+        editingInstanceDate={editingInstanceDate}
         editingSourceEventIds={editingSourceEventIds}
         onCancelEdit={onCancelEdit}
         onSaved={onEventCreated}
@@ -280,6 +283,7 @@ export function PlayersPage() {
   const [selectedPlayerId, setSelectedPlayerId] = usePersistedState<string>('lodario:coach-players:selected-player', '');
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [editingInstanceDate, setEditingInstanceDate] = useState<string | null>(null);
   const eventTypeColors = useMemo(
     () => Object.fromEntries(customEventTypes.map((type) => [type.id, type.color])),
     [customEventTypes]
@@ -449,14 +453,24 @@ export function PlayersPage() {
             playerDataset={selectedPlayerDataset}
             teamPlayerIds={teamPlayerIds}
             editingEvent={editingEvent}
+            editingInstanceDate={editingInstanceDate}
             editingSourceEventIds={editingSourceEventIds}
-            onEditEvent={(occurrence) => setEditingEventId(occurrence.event.id)}
-            onCancelEdit={() => setEditingEventId(null)}
-            onEventCreated={() => setRefreshVersion((version) => version + 1)}
+            onEditEvent={(occurrence) => {
+              setEditingEventId(occurrence.event.id);
+              setEditingInstanceDate(occurrence.instanceDate);
+            }}
+            onCancelEdit={() => {
+              setEditingEventId(null);
+              setEditingInstanceDate(null);
+            }}
+            onEventCreated={() => {
+              setRefreshVersion((version) => version + 1);
+            }}
             eventTypeColors={eventTypeColors}
           />
         )}
       </div>
+
     </div>
   );
 }

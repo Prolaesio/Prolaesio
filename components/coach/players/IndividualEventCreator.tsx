@@ -11,6 +11,11 @@ import type {
 } from '@/components/coach/players/types';
 import { Toggle } from '@/components/ui/Toggle';
 import { useAuth } from '@/lib/AuthContext';
+import {
+  cleanupAttendanceForEventGroup,
+  cleanupAttendanceForOccurrence,
+  getCoachAttendanceTargetFromPlayerCalendarEvent,
+} from '@/lib/calendar/attendance';
 import { withCoachCalendarMeta } from '@/lib/calendar/events';
 import { useData } from '@/lib/DataContext';
 import { supabase } from '@/lib/supabase';
@@ -22,6 +27,7 @@ interface IndividualEventCreatorProps {
   teamId: string;
   teamPlayerIds?: string[];
   editingEvent?: PlayerCalendarEvent | null;
+  editingInstanceDate?: string | null;
   editingSourceEventIds?: string[];
   onCancelEdit?: () => void;
   onSaved: () => void;
@@ -129,6 +135,7 @@ export function IndividualEventCreator({
   teamId,
   teamPlayerIds = [playerId],
   editingEvent,
+  editingInstanceDate,
   editingSourceEventIds = [],
   onCancelEdit,
   onSaved,
@@ -399,6 +406,89 @@ export function IndividualEventCreator({
     setForm(createDefaultForm());
     setSaveSuccess(editingEvent ? 'Event updated.' : publish ? `Individual event published for ${playerName}.` : `Draft saved for ${playerName}.`);
     setIsSaving(false);
+    onCancelEdit?.();
+    onSaved();
+  };
+
+  const deleteEvent = async () => {
+    if (!editingEvent) {
+      setSaveError('No saved event is selected.');
+      return;
+    }
+
+    const idsToDelete = editingSourceEventIds.length > 0 ? editingSourceEventIds : [editingEvent.id];
+    setIsSaving(true);
+    setSaveError(null);
+    setSaveSuccess(null);
+
+    const attendanceTarget = getCoachAttendanceTargetFromPlayerCalendarEvent(editingEvent, editingEvent.date);
+    if (attendanceTarget) {
+      const cleanup = await cleanupAttendanceForEventGroup({
+        target: attendanceTarget,
+        playerId: editingEvent.assignmentScope === 'player' ? playerId : null,
+      });
+      if (cleanup.error) {
+        setIsSaving(false);
+        setSaveError(cleanup.error);
+        return;
+      }
+    }
+
+    const { error: deleteError } = await supabase
+      .from('calendar_events')
+      .delete()
+      .in('id', idsToDelete);
+
+    setIsSaving(false);
+    if (deleteError) {
+      setSaveError(deleteError.message || 'Unable to delete this event.');
+      return;
+    }
+
+    setForm(createDefaultForm());
+    setSaveSuccess('Event deleted.');
+    onCancelEdit?.();
+    onSaved();
+  };
+
+  const deleteOccurrence = async () => {
+    if (!editingEvent || !editingInstanceDate) {
+      setSaveError('No occurrence is selected.');
+      return;
+    }
+
+    const idsToUpdate = editingSourceEventIds.length > 0 ? editingSourceEventIds : [editingEvent.id];
+    setIsSaving(true);
+    setSaveError(null);
+    setSaveSuccess(null);
+
+    const attendanceTarget = getCoachAttendanceTargetFromPlayerCalendarEvent(editingEvent, editingInstanceDate);
+    if (attendanceTarget) {
+      const cleanup = await cleanupAttendanceForOccurrence({
+        target: attendanceTarget,
+        playerId: editingEvent.assignmentScope === 'player' ? playerId : null,
+      });
+      if (cleanup.error) {
+        setIsSaving(false);
+        setSaveError(cleanup.error);
+        return;
+      }
+    }
+
+    const nextExcludedDates = Array.from(new Set([...(editingEvent.excludedDates ?? []), editingInstanceDate]));
+    const { error: updateError } = await supabase
+      .from('calendar_events')
+      .update({ excluded_dates: nextExcludedDates })
+      .in('id', idsToUpdate);
+
+    setIsSaving(false);
+    if (updateError) {
+      setSaveError(updateError.message || 'Unable to delete this occurrence.');
+      return;
+    }
+
+    setForm(createDefaultForm());
+    setSaveSuccess('Occurrence deleted.');
     onCancelEdit?.();
     onSaved();
   };
@@ -791,6 +881,28 @@ export function IndividualEventCreator({
           >
             {isSaving ? 'Saving...' : editingEvent ? 'Update and Publish' : 'Save and Publish'}
           </button>
+          {editingEvent ? (
+            <>
+              {editingEvent.recurrence && editingEvent.recurrence !== 'none' && editingInstanceDate ? (
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => void deleteOccurrence()}
+                  className="w-full rounded-xl border border-[rgba(255,146,43,0.34)] bg-[rgba(255,146,43,0.1)] py-3 text-sm font-semibold text-[var(--status-orange)] transition-colors hover:bg-[rgba(255,146,43,0.14)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Delete This Occurrence
+                </button>
+              ) : null}
+            <button
+              type="button"
+              disabled={isSaving}
+              onClick={() => void deleteEvent()}
+              className="w-full rounded-xl border border-[rgba(255,107,107,0.32)] bg-[rgba(255,107,107,0.1)] py-3 text-sm font-semibold text-[#ff6b6b] transition-colors hover:bg-[rgba(255,107,107,0.14)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {editingEvent.recurrence && editingEvent.recurrence !== 'none' ? 'Delete Series' : 'Delete Event'}
+            </button>
+            </>
+          ) : null}
         </div>
       </div>
     </section>

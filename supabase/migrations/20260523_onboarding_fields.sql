@@ -18,7 +18,6 @@ ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS availability JSONB DEFAULT '{}'::jsonb,
   ADD COLUMN IF NOT EXISTS training_resources TEXT[] DEFAULT '{}',
   ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE;
-
 -- Backfill: any profile that already exists is considered fully onboarded.
 UPDATE public.profiles
 SET onboarding_completed = TRUE

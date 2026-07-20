@@ -12,8 +12,9 @@ interface TeamCalendarProps {
   className?: string;
   style?: CSSProperties;
   selectedItemId?: string | null;
-  onSelectItem?: (item: TeamCalendarItem, instanceDate: string) => void;
+  onSelectItem?: (item: TeamCalendarItem, instanceDate: string, click?: { x: number; y: number }) => void;
   onSelectEmptySlot?: (date: string, hour: number) => void;
+  onCalendarViewportChange?: () => void;
 }
 
 interface ParsedCalendarItem extends TeamCalendarItem {
@@ -182,13 +183,15 @@ function DaySchedule({
   selectedItemId,
   onSelectItem,
   onSelectEmptySlot,
+  onCalendarViewportChange,
   eventTypeColors,
 }: {
   date: Date;
   items: TeamCalendarItem[];
   selectedItemId?: string | null;
-  onSelectItem?: (item: TeamCalendarItem, instanceDate: string) => void;
+  onSelectItem?: (item: TeamCalendarItem, instanceDate: string, click?: { x: number; y: number }) => void;
   onSelectEmptySlot?: (date: string, hour: number) => void;
+  onCalendarViewportChange?: () => void;
   eventTypeColors: Record<string, string>;
 }) {
   const scheduleRef = useRef<HTMLDivElement>(null);
@@ -204,6 +207,18 @@ function DaySchedule({
       container.scrollTop = initialVisibleRow.offsetTop;
     }
   }, [dateKey]);
+
+  useEffect(() => {
+    const container = scheduleRef.current;
+    if (!container || !onCalendarViewportChange) return;
+
+    const handleScroll = () => onCalendarViewportChange();
+    container.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+    };
+  }, [onCalendarViewportChange]);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-[rgba(255,255,255,0.08)]">
@@ -264,7 +279,7 @@ function DaySchedule({
                       }}
                       onClick={(event) => {
                         event.stopPropagation();
-                        onSelectItem?.(item, item.instanceDate);
+                        onSelectItem?.(item, item.instanceDate, { x: event.clientX, y: event.clientY });
                       }}
                     />
                   );
@@ -290,7 +305,7 @@ function DaySchedule({
                       }}
                       onClick={(event) => {
                         event.stopPropagation();
-                        onSelectItem?.(item, item.instanceDate);
+                        onSelectItem?.(item, item.instanceDate, { x: event.clientX, y: event.clientY });
                       }}
                     >
                       {item.kind === 'task' ? `Task: ${item.renderedTitle}` : item.renderedTitle}
@@ -312,13 +327,15 @@ function WeekSchedule({
   selectedItemId,
   onSelectItem,
   onSelectEmptySlot,
+  onCalendarViewportChange,
   eventTypeColors,
 }: {
   currentDate: Date;
   items: TeamCalendarItem[];
   selectedItemId?: string | null;
-  onSelectItem?: (item: TeamCalendarItem, instanceDate: string) => void;
+  onSelectItem?: (item: TeamCalendarItem, instanceDate: string, click?: { x: number; y: number }) => void;
   onSelectEmptySlot?: (date: string, hour: number) => void;
+  onCalendarViewportChange?: () => void;
   eventTypeColors: Record<string, string>;
 }) {
   const scheduleRef = useRef<HTMLDivElement>(null);
@@ -339,6 +356,18 @@ function WeekSchedule({
       container.scrollTop = initialVisibleRow.offsetTop;
     }
   }, [currentDate]);
+
+  useEffect(() => {
+    const container = scheduleRef.current;
+    if (!container || !onCalendarViewportChange) return;
+
+    const handleScroll = () => onCalendarViewportChange();
+    container.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+    };
+  }, [onCalendarViewportChange]);
 
   return (
     <div className="hidden h-full min-h-0 md:block">
@@ -420,7 +449,7 @@ function WeekSchedule({
                             }}
                             onClick={(event) => {
                               event.stopPropagation();
-                              onSelectItem?.(item, item.instanceDate);
+                              onSelectItem?.(item, item.instanceDate, { x: event.clientX, y: event.clientY });
                             }}
                           />
                         );
@@ -447,7 +476,7 @@ function WeekSchedule({
                             }}
                             onClick={(event) => {
                               event.stopPropagation();
-                              onSelectItem?.(item, item.instanceDate);
+                              onSelectItem?.(item, item.instanceDate, { x: event.clientX, y: event.clientY });
                             }}
                           >
                             {item.kind === 'task' ? `Task: ${item.renderedTitle}` : item.renderedTitle}
@@ -473,6 +502,7 @@ export function TeamCalendar({
   selectedItemId,
   onSelectItem,
   onSelectEmptySlot,
+  onCalendarViewportChange,
   eventTypeColors = {},
 }: TeamCalendarProps) {
   const [view, setView] = usePersistedState<'Day' | 'Week'>('lodario:coach-team-calendar:view', 'Week');
@@ -491,8 +521,11 @@ export function TeamCalendar({
           {(['Day', 'Week'] as const).map((mode) => (
             <button
               key={mode}
-              type="button"
-              onClick={() => setView(mode)}
+            type="button"
+            onClick={() => {
+              onCalendarViewportChange?.();
+              setView(mode);
+            }}
               className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
                 view === mode ? 'bg-[var(--card-bg)] text-white' : 'text-gray-400 hover:text-white'
               }`}
@@ -505,9 +538,10 @@ export function TeamCalendar({
         <div className="flex items-center gap-2 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.04)] px-2 py-1">
           <button
             type="button"
-            onClick={() =>
-              setCurrentDateKey(format(view === 'Week' ? subWeeks(currentDate, 1) : subDays(currentDate, 1), 'yyyy-MM-dd'))
-            }
+            onClick={() => {
+              onCalendarViewportChange?.();
+              setCurrentDateKey(format(view === 'Week' ? subWeeks(currentDate, 1) : subDays(currentDate, 1), 'yyyy-MM-dd'));
+            }}
             className="rounded-full p-1.5 text-gray-300 transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-white"
             aria-label="Previous period"
           >
@@ -516,9 +550,10 @@ export function TeamCalendar({
           <p className="min-w-[148px] text-center text-xs font-semibold text-white">{viewLabel}</p>
           <button
             type="button"
-            onClick={() =>
-              setCurrentDateKey(format(view === 'Week' ? addWeeks(currentDate, 1) : addDays(currentDate, 1), 'yyyy-MM-dd'))
-            }
+            onClick={() => {
+              onCalendarViewportChange?.();
+              setCurrentDateKey(format(view === 'Week' ? addWeeks(currentDate, 1) : addDays(currentDate, 1), 'yyyy-MM-dd'));
+            }}
             className="rounded-full p-1.5 text-gray-300 transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-white"
             aria-label="Next period"
           >
@@ -535,6 +570,7 @@ export function TeamCalendar({
             selectedItemId={selectedItemId}
             onSelectItem={onSelectItem}
             onSelectEmptySlot={onSelectEmptySlot}
+            onCalendarViewportChange={onCalendarViewportChange}
             eventTypeColors={eventTypeColors}
           />
         ) : null}
@@ -547,6 +583,7 @@ export function TeamCalendar({
                 selectedItemId={selectedItemId}
                 onSelectItem={onSelectItem}
                 onSelectEmptySlot={onSelectEmptySlot}
+                onCalendarViewportChange={onCalendarViewportChange}
                 eventTypeColors={eventTypeColors}
               />
             </div>
@@ -556,6 +593,7 @@ export function TeamCalendar({
               selectedItemId={selectedItemId}
               onSelectItem={onSelectItem}
               onSelectEmptySlot={onSelectEmptySlot}
+              onCalendarViewportChange={onCalendarViewportChange}
               eventTypeColors={eventTypeColors}
             />
           </>

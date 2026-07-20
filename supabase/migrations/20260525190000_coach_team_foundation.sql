@@ -17,10 +17,8 @@ CREATE TABLE IF NOT EXISTS public.teams (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS teams_created_by_idx
   ON public.teams (created_by);
-
 CREATE TABLE IF NOT EXISTS public.team_memberships (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   team_id UUID NOT NULL REFERENCES public.teams(id) ON DELETE CASCADE,
@@ -32,16 +30,12 @@ CREATE TABLE IF NOT EXISTS public.team_memberships (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(team_id, user_id)
 );
-
 CREATE INDEX IF NOT EXISTS team_memberships_user_id_idx
   ON public.team_memberships (user_id);
-
 CREATE INDEX IF NOT EXISTS team_memberships_team_id_idx
   ON public.team_memberships (team_id);
-
 CREATE INDEX IF NOT EXISTS team_memberships_team_status_idx
   ON public.team_memberships (team_id, status);
-
 -- Keep updated_at in sync with existing trigger function.
 DO $$
 BEGIN
@@ -73,10 +67,8 @@ BEGIN
   END IF;
 END;
 $$;
-
 ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.team_memberships ENABLE ROW LEVEL SECURITY;
-
 -- Teams: only visible/manageable by related users.
 DO $$
 BEGIN
@@ -103,7 +95,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -128,7 +119,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -166,7 +156,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -183,7 +172,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 -- Team memberships: visible to the member and team coaches/creator.
 DO $$
 BEGIN
@@ -217,7 +205,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -251,7 +238,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -303,7 +289,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 DO $$
 BEGIN
   IF NOT EXISTS (

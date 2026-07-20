@@ -119,7 +119,6 @@ BEGIN
     'Team joined successfully.'::TEXT;
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.get_team_players(
   p_team_id UUID
 )
@@ -172,7 +171,6 @@ BEGIN
   ORDER BY tm.joined_at ASC;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.join_team_by_invite_code(TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_team_players(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.join_team_by_invite_code(TEXT) TO authenticated;

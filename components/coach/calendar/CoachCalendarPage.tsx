@@ -1,8 +1,10 @@
 'use client';
 
 import { parseISO } from 'date-fns';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Plus, Pencil, Trash2 } from 'lucide-react';
+import { CoachAttendanceModal } from '@/components/coach/attendance/CoachAttendanceModal';
+import { FloatingAttendanceButton } from '@/components/coach/attendance/FloatingAttendanceButton';
 import { TeamAveragesPanel } from '@/components/coach/calendar/TeamAveragesPanel';
 import { TeamCalendar } from '@/components/coach/calendar/TeamCalendar';
 import type {
@@ -16,6 +18,12 @@ import type {
 } from '@/components/coach/calendar/types';
 import { Toggle } from '@/components/ui/Toggle';
 import { useAuth } from '@/lib/AuthContext';
+import {
+  type AttendanceEventTarget,
+  cleanupAttendanceForEventGroup,
+  cleanupAttendanceForOccurrence,
+  getCoachAttendanceTargetFromTeamItem,
+} from '@/lib/calendar/attendance';
 import { withCoachCalendarMeta } from '@/lib/calendar/events';
 import { useCoachTeam } from '@/lib/coach/selectedTeam';
 import { useCoachSelectedTeamInsights } from '@/lib/coach/teamInsights';
@@ -158,6 +166,12 @@ export function CoachCalendarPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [floatingAttendance, setFloatingAttendance] = useState<{
+    target: AttendanceEventTarget;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [attendanceModalTarget, setAttendanceModalTarget] = useState<AttendanceEventTarget | null>(null);
   const playerOptions = useMemo<TeamPlayerOption[]>(
     () => players.map((dataset) => ({ id: dataset.player.id, name: dataset.player.name })),
     [players]
@@ -199,6 +213,11 @@ export function CoachCalendarPage() {
     () => new Set(coachEventTypes.filter((type) => type.isActivity).map((type) => type.id)),
     [coachEventTypes]
   );
+
+  useEffect(() => {
+    setFloatingAttendance(null);
+    setAttendanceModalTarget(null);
+  }, [selectedTeam.id]);
 
   useEffect(() => {
     return () => {
@@ -303,21 +322,38 @@ export function CoachCalendarPage() {
   const resetForm = () => {
     setSelectedItemId(null);
     setSelectedInstanceDate(undefined);
+    setFloatingAttendance(null);
     setSaveError(null);
     setSaveSuccess(null);
     setForm(createDefaultForm(playerOptions));
   };
 
-  const handleSelectItem = (item: TeamCalendarItem, instanceDate: string) => {
+  const closeFloatingAttendance = useCallback(() => {
+    setFloatingAttendance(null);
+  }, []);
+
+  const handleSelectItem = (item: TeamCalendarItem, instanceDate: string, click?: { x: number; y: number }) => {
     setSelectedItemId(item.id);
     setSelectedInstanceDate(instanceDate);
     setSaveError(null);
     setSaveSuccess(null);
+
+    const attendanceTarget = getCoachAttendanceTargetFromTeamItem(item, instanceDate);
+    if (attendanceTarget && click) {
+      setFloatingAttendance({
+        target: attendanceTarget,
+        x: click.x,
+        y: click.y,
+      });
+    } else {
+      setFloatingAttendance(null);
+    }
   };
 
   const handleSelectSlot = (date: string, hour: number) => {
     setSelectedItemId(null);
     setSelectedInstanceDate(undefined);
+    setFloatingAttendance(null);
     setSaveError(null);
     setSaveSuccess(null);
     setForm((previous) => ({
@@ -453,6 +489,7 @@ export function CoachCalendarPage() {
     setIsSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
+    setFloatingAttendance(null);
 
     if (existingEventIds.length > 0) {
       const { error: deleteError } = await supabase
@@ -496,15 +533,64 @@ export function CoachCalendarPage() {
     reload();
   };
 
-  const deleteSelectedItem = async () => {
+  const deleteSelectedItem = async (scope: 'series' | 'occurrence' = 'series') => {
     if (!selectedItem || !selectedItem.sourceEventIds?.length) {
       setSaveError('No saved event is selected.');
+      return;
+    }
+
+    if (scope === 'occurrence' && !selectedInstanceDate) {
+      setSaveError('No occurrence is selected.');
       return;
     }
 
     setIsSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
+    setFloatingAttendance(null);
+
+    const attendanceTarget = selectedInstanceDate
+      ? getCoachAttendanceTargetFromTeamItem(selectedItem, selectedInstanceDate)
+      : null;
+
+    if (scope === 'occurrence') {
+      if (attendanceTarget) {
+        const cleanup = await cleanupAttendanceForOccurrence({ target: attendanceTarget });
+        if (cleanup.error) {
+          setIsSaving(false);
+          setSaveError(cleanup.error);
+          return;
+        }
+      }
+
+      const nextExcludedDates = Array.from(new Set([...(selectedItem.excludedDates ?? []), selectedInstanceDate as string]));
+      const { error: updateError } = await supabase
+        .from('calendar_events')
+        .update({
+          excluded_dates: nextExcludedDates,
+        })
+        .in('id', selectedItem.sourceEventIds);
+
+      setIsSaving(false);
+      if (updateError) {
+        setSaveError(updateError.message || 'Unable to delete this occurrence.');
+        return;
+      }
+
+      setSaveSuccess('Occurrence deleted.');
+      resetForm();
+      reload();
+      return;
+    }
+
+    if (attendanceTarget) {
+      const cleanup = await cleanupAttendanceForEventGroup({ target: attendanceTarget });
+      if (cleanup.error) {
+        setIsSaving(false);
+        setSaveError(cleanup.error);
+        return;
+      }
+    }
 
     const { error: deleteError } = await supabase
       .from('calendar_events')
@@ -588,6 +674,7 @@ export function CoachCalendarPage() {
           selectedItemId={selectedItemId}
           onSelectItem={handleSelectItem}
           onSelectEmptySlot={handleSelectSlot}
+          onCalendarViewportChange={closeFloatingAttendance}
           className="xl:self-start"
           style={desktopScheduleHeight && teamData.averages.length > 0 ? { height: `${desktopScheduleHeight}px` } : undefined}
         />
@@ -981,14 +1068,26 @@ export function CoachCalendarPage() {
                 {isSaving ? 'Saving...' : 'Save and Publish'}
               </button>
               {selectedItem ? (
+                <>
+                  {selectedItem.recurrence && selectedItem.recurrence !== 'none' && selectedInstanceDate ? (
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={() => void deleteSelectedItem('occurrence')}
+                      className="w-full rounded-xl border border-[rgba(255,146,43,0.34)] bg-[rgba(255,146,43,0.1)] py-3 text-sm font-semibold text-[var(--status-orange)] transition-colors hover:bg-[rgba(255,146,43,0.14)] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Delete This Occurrence
+                    </button>
+                  ) : null}
                 <button
                   type="button"
                   disabled={isSaving}
-                  onClick={() => void deleteSelectedItem()}
+                  onClick={() => void deleteSelectedItem('series')}
                   className="w-full rounded-xl border border-[rgba(255,107,107,0.32)] bg-[rgba(255,107,107,0.1)] py-3 text-sm font-semibold text-[#ff6b6b] transition-colors hover:bg-[rgba(255,107,107,0.14)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Delete Event
+                  {selectedItem.recurrence && selectedItem.recurrence !== 'none' ? 'Delete Series' : 'Delete Event'}
                 </button>
+                </>
               ) : null}
               {selectedItem ? (
                 <button
@@ -1004,6 +1103,25 @@ export function CoachCalendarPage() {
           </div>
         </section>
       </div>
+
+      {floatingAttendance ? (
+        <FloatingAttendanceButton
+          x={floatingAttendance.x}
+          y={floatingAttendance.y}
+          onClose={closeFloatingAttendance}
+          onOpen={() => {
+            setAttendanceModalTarget(floatingAttendance.target);
+            setFloatingAttendance(null);
+          }}
+        />
+      ) : null}
+
+      {attendanceModalTarget ? (
+        <CoachAttendanceModal
+          target={attendanceModalTarget}
+          onClose={() => setAttendanceModalTarget(null)}
+        />
+      ) : null}
     </div>
   );
 }

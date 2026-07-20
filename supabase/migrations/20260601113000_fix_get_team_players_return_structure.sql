@@ -7,7 +7,6 @@
 -- shape, preserving order and types.
 
 DROP FUNCTION IF EXISTS public.get_team_players(UUID);
-
 CREATE OR REPLACE FUNCTION public.get_team_players(
   p_team_id UUID
 )
@@ -60,6 +59,5 @@ BEGIN
   ORDER BY tm.joined_at ASC;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.get_team_players(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_team_players(UUID) TO authenticated;

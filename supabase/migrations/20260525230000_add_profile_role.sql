@@ -7,7 +7,6 @@
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS role TEXT
   CHECK (role IN ('player', 'coach'));
-
 -- Existing users should continue in the athlete/player experience unless they
 -- already have an explicit role.
 UPDATE public.profiles

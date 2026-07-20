@@ -5,6 +5,9 @@ import { CalendarEvent, RecurrenceType } from '../lib/types';
 import { useData } from '../lib/DataContext';
 import { X, Save, Plus, Trash2, Check, FileText, ChevronDown, Lock, Pencil, Palette } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { PlayerRsvpControl } from '@/components/calendar/PlayerRsvpControl';
+import { useAuth } from '@/lib/AuthContext';
+import { getPlayerRsvpTargetFromCalendarEvent } from '@/lib/calendar/attendance';
 import { parseCoachCalendarMeta } from '../lib/calendar/events';
 
 interface EventModalProps {
@@ -21,6 +24,7 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export function EventModal({ onClose, selectedDate, existingEvent, isRecurringInstance, instanceDate, defaultStartHour, readOnly = false }: EventModalProps) {
   const { customEventTypes, saveCalendarEvent, deleteCalendarEvent, saveCalendarEventColorOverride, saveCustomEventType, deleteCustomEventType } = useData();
+  const { user } = useAuth();
 
   // --- Event type long-press-to-delete ---
   const [deleteTypeId, setDeleteTypeId] = useState<string | null>(null);
@@ -308,6 +312,9 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
   const detailType = customEventTypes.find(type => type.id === eventTypeId);
   const detailDate = (instanceDate || eventDate);
   const detailTitle = title || detailType?.name || 'Event';
+  const playerRsvpTarget = existingEvent
+    ? getPlayerRsvpTargetFromCalendarEvent(existingEvent, detailDate, user?.id)
+    : null;
 
   if (isDetailMode && existingEvent) {
     return (
@@ -371,6 +378,8 @@ export function EventModal({ onClose, selectedDate, existingEvent, isRecurringIn
               <p className="text-xs uppercase tracking-wider text-gray-400">Description</p>
               <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-gray-200">{description || 'No description provided.'}</p>
             </div>
+
+            {playerRsvpTarget ? <PlayerRsvpControl target={playerRsvpTarget} /> : null}
 
             {readOnly && coachMeta?.coachId ? (
               <div className="rounded-xl border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.04)] p-3">

@@ -3,9 +3,14 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { format, parseISO } from 'date-fns';
-import { ArrowUpRight, CalendarPlus, CalendarRange, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, LineChart, XCircle } from 'lucide-react';
+import { ArrowUpRight, CalendarPlus, CalendarRange, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, ClipboardList, LineChart, XCircle } from 'lucide-react';
+import { CoachAttendanceModal } from '@/components/coach/attendance/CoachAttendanceModal';
 import { useCoachTeam } from '@/lib/coach/selectedTeam';
 import { useCoachSelectedTeamInsights } from '@/lib/coach/teamInsights';
+import {
+  type AttendanceEventTarget,
+  getCoachAttendanceTargetFromTeamItem,
+} from '@/lib/calendar/attendance';
 import type { OverviewDailyWellnessStatus, OverviewTrend } from '@/components/coach/overview/buildFromInsights';
 
 interface SparklineProps {
@@ -205,6 +210,7 @@ const quickActions = [
 export function CoachOverviewPage() {
   const { selectedTeam } = useCoachTeam();
   const { overviewData, isLoading, error } = useCoachSelectedTeamInsights(selectedTeam.id);
+  const [attendanceModalTarget, setAttendanceModalTarget] = useState<AttendanceEventTarget | null>(null);
 
   if (!selectedTeam.id) {
     return (
@@ -373,12 +379,26 @@ export function CoachOverviewPage() {
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
-                      <span className="rounded-full border border-[rgba(255,255,255,0.15)] bg-[rgba(255,255,255,0.05)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-200">
-                        {activity.kind}
-                      </span>
                       <span className="rounded-full border border-[rgba(var(--accent-secondary-rgb),0.35)] bg-[rgba(var(--accent-secondary-rgb),0.12)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--accent-secondary)]">
                         {activity.type}
                       </span>
+                      {getCoachAttendanceTargetFromTeamItem(activity.item, activity.date) ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const target = getCoachAttendanceTargetFromTeamItem(activity.item, activity.date);
+                            if (target) setAttendanceModalTarget(target);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(var(--accent-primary-rgb),0.38)] bg-[rgba(var(--accent-primary-rgb),0.12)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[var(--accent-primary)] transition-colors hover:bg-[rgba(var(--accent-primary-rgb),0.18)]"
+                        >
+                          <ClipboardCheck size={12} />
+                          Attendance
+                        </button>
+                      ) : (
+                        <span className="rounded-full border border-[rgba(255,255,255,0.15)] bg-[rgba(255,255,255,0.05)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-200">
+                          {activity.kind}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </article>
@@ -433,6 +453,13 @@ export function CoachOverviewPage() {
           })}
         </div>
       </section>
+
+      {attendanceModalTarget ? (
+        <CoachAttendanceModal
+          target={attendanceModalTarget}
+          onClose={() => setAttendanceModalTarget(null)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -17,21 +17,16 @@ CREATE TABLE IF NOT EXISTS public.player_calendar_event_color_overrides (
     OR (scope = 'coach' AND coach_id IS NOT NULL)
   )
 );
-
 CREATE UNIQUE INDEX IF NOT EXISTS player_calendar_event_color_overrides_event_unique
   ON public.player_calendar_event_color_overrides (user_id, event_id)
   WHERE scope = 'event';
-
 CREATE UNIQUE INDEX IF NOT EXISTS player_calendar_event_color_overrides_type_unique
   ON public.player_calendar_event_color_overrides (user_id, coach_id, event_type_id)
   WHERE scope = 'event_type';
-
 CREATE UNIQUE INDEX IF NOT EXISTS player_calendar_event_color_overrides_coach_unique
   ON public.player_calendar_event_color_overrides (user_id, coach_id)
   WHERE scope = 'coach';
-
 ALTER TABLE public.player_calendar_event_color_overrides ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -48,7 +43,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -65,7 +59,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -83,7 +76,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -100,10 +92,8 @@ BEGIN
   END IF;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS set_updated_at_player_calendar_event_color_overrides
   ON public.player_calendar_event_color_overrides;
-
 CREATE TRIGGER set_updated_at_player_calendar_event_color_overrides
   BEFORE UPDATE ON public.player_calendar_event_color_overrides
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();

@@ -6,21 +6,15 @@
 
 ALTER TABLE public.calendar_events
   ADD COLUMN IF NOT EXISTS description TEXT;
-
 ALTER TABLE public.calendar_events
   ADD COLUMN IF NOT EXISTS recurrence TEXT DEFAULT 'none';
-
 ALTER TABLE public.calendar_events
   ADD COLUMN IF NOT EXISTS recurrence_config JSONB DEFAULT '{}'::jsonb;
-
 ALTER TABLE public.calendar_events
   ADD COLUMN IF NOT EXISTS recurrence_end_date DATE;
-
 ALTER TABLE public.calendar_events
   ADD COLUMN IF NOT EXISTS excluded_dates JSONB DEFAULT '[]'::jsonb;
-
 ALTER TABLE public.calendar_events
   ADD COLUMN IF NOT EXISTS overrides JSONB DEFAULT '{}'::jsonb;
-
 ALTER TABLE public.calendar_events
   ADD COLUMN IF NOT EXISTS anticipated_intensity TEXT;

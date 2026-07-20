@@ -40,6 +40,7 @@ export interface OverviewUpcomingActivity {
   date: string;
   startTime: string;
   endTime: string;
+  item: TeamCalendarDataset['items'][number];
 }
 
 export interface OverviewTrend {
@@ -410,6 +411,7 @@ export function buildTeamOverviewData({
       date: item.date,
       startTime: item.startTime,
       endTime: item.endTime,
+      item,
     }));
 
   const readinessTrendPoints = analyticsData.averages.readinessTrend.map((point) => point.readinessScore);

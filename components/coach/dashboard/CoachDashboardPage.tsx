@@ -1,19 +1,26 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import {
   ArrowUpRight,
   CalendarDays,
   CalendarPlus,
   ChevronRight,
+  ClipboardCheck,
   Layers,
   LineChart,
   Users,
 } from 'lucide-react';
+import { CoachAttendanceModal } from '@/components/coach/attendance/CoachAttendanceModal';
+import { FloatingAttendanceButton } from '@/components/coach/attendance/FloatingAttendanceButton';
 import { TeamCalendar } from '@/components/coach/calendar/TeamCalendar';
 import type { TeamCalendarItem } from '@/components/coach/calendar/types';
+import {
+  type AttendanceEventTarget,
+  getCoachAttendanceTargetFromTeamItem,
+} from '@/lib/calendar/attendance';
 import { useCoachAllTeamsCalendarItems, useCoachTeamInjuryAlerts, useCoachTeamProfileAverages } from '@/lib/coach/teamInsights';
 import { useCoachTeam } from '@/lib/coach/selectedTeam';
 
@@ -40,6 +47,7 @@ interface UpcomingActivity {
   title: string;
   type: string;
   startsAt: string;
+  item: TeamCalendarItem;
 }
 
 interface DashboardAlert {
@@ -96,6 +104,12 @@ const quickActions = [
 
 export function CoachDashboardPage() {
   const { teams, selectedTeam, selectedTeamId, setSelectedTeamId } = useCoachTeam();
+  const [floatingAttendance, setFloatingAttendance] = useState<{
+    target: AttendanceEventTarget;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [attendanceModalTarget, setAttendanceModalTarget] = useState<AttendanceEventTarget | null>(null);
   const teamIds = useMemo(() => teams.map((team) => team.id), [teams]);
   const { averagesByTeamId: profileAveragesByTeamId, isLoading: isLoadingPlayerCounts, error: playerCountError } = useCoachTeamProfileAverages(teamIds);
   const { items: allTeamsCalendarItems, isLoading: isLoadingCalendarItems, error: calendarItemsError } = useCoachAllTeamsCalendarItems(teams);
@@ -155,8 +169,26 @@ export function CoachDashboardPage() {
         title: item.title,
         type: item.type,
         startsAt: `${item.date}T${item.startTime}:00`,
+        item,
       }));
   }, [allTeamsCalendarItems]);
+
+  const closeFloatingAttendance = useCallback(() => {
+    setFloatingAttendance(null);
+  }, []);
+
+  const handleCalendarItemSelect = useCallback((item: TeamCalendarItem, instanceDate: string, click?: { x: number; y: number }) => {
+    const attendanceTarget = getCoachAttendanceTargetFromTeamItem(item, instanceDate);
+    if (attendanceTarget && click) {
+      setFloatingAttendance({
+        target: attendanceTarget,
+        x: click.x,
+        y: click.y,
+      });
+    } else {
+      setFloatingAttendance(null);
+    }
+  }, []);
 
   const recentAlerts = useMemo<DashboardAlert[]>(() => {
     const alerts: DashboardAlert[] = [];
@@ -377,6 +409,19 @@ export function CoachDashboardPage() {
                       <span className="rounded-full border border-[rgba(var(--accent-secondary-rgb),0.35)] bg-[rgba(var(--accent-secondary-rgb),0.12)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--accent-secondary)]">
                         {activity.type}
                       </span>
+                      {getCoachAttendanceTargetFromTeamItem(activity.item, activity.item.date) ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const target = getCoachAttendanceTargetFromTeamItem(activity.item, activity.item.date);
+                            if (target) setAttendanceModalTarget(target);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(var(--accent-primary-rgb),0.38)] bg-[rgba(var(--accent-primary-rgb),0.12)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[var(--accent-primary)] transition-colors hover:bg-[rgba(var(--accent-primary-rgb),0.18)]"
+                        >
+                          <ClipboardCheck size={12} />
+                          Attendance
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 </article>
@@ -473,9 +518,33 @@ export function CoachDashboardPage() {
           </Link>
         </div>
 
-        <TeamCalendar items={allTeamsCalendarItems} className="min-h-[560px] xl:h-[760px]" />
+        <TeamCalendar
+          items={allTeamsCalendarItems}
+          className="min-h-[560px] xl:h-[760px]"
+          onSelectItem={handleCalendarItemSelect}
+          onCalendarViewportChange={closeFloatingAttendance}
+        />
         {isLoadingCalendarItems ? <p className="text-xs text-gray-400">Loading cross-team calendar...</p> : null}
       </section>
+
+      {floatingAttendance ? (
+        <FloatingAttendanceButton
+          x={floatingAttendance.x}
+          y={floatingAttendance.y}
+          onClose={closeFloatingAttendance}
+          onOpen={() => {
+            setAttendanceModalTarget(floatingAttendance.target);
+            setFloatingAttendance(null);
+          }}
+        />
+      ) : null}
+
+      {attendanceModalTarget ? (
+        <CoachAttendanceModal
+          target={attendanceModalTarget}
+          onClose={() => setAttendanceModalTarget(null)}
+        />
+      ) : null}
     </div>
   );
 }

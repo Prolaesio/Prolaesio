@@ -9,6 +9,5 @@
 
 ALTER TABLE public.custom_event_types
   ADD COLUMN IF NOT EXISTS is_activity BOOLEAN DEFAULT false;
-
 ALTER TABLE public.custom_event_types
   ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;

@@ -6,7 +6,6 @@
 -- Supabase RPC lookup can find it reliably.
 
 DROP FUNCTION IF EXISTS public.join_team_by_invite_code(TEXT, UUID);
-
 CREATE OR REPLACE FUNCTION public.join_team_by_invite_code(
   p_invite_code TEXT
 )
@@ -119,6 +118,5 @@ BEGIN
     'Team joined successfully.'::TEXT;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.join_team_by_invite_code(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.join_team_by_invite_code(TEXT) TO authenticated;

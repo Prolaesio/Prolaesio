@@ -287,7 +287,7 @@ function DaySchedule({
 }: {
   date: Date;
   events: PlayerCalendarEvent[];
-  onSelectOccurrence: (occurrence: SelectedOccurrence) => void;
+  onSelectOccurrence: (occurrence: SelectedOccurrence, click: { x: number; y: number }) => void;
   eventTypeColors: Record<string, string>;
 }) {
   const scheduleRef = useRef<HTMLDivElement>(null);
@@ -348,7 +348,7 @@ function DaySchedule({
                         left: totalColumns > 1 ? `${column * slotWidth}%` : '0',
                         width: totalColumns > 1 ? `${slotWidth}%` : '100%',
                       }}
-                      onClick={() =>
+                      onClick={(clickEvent) =>
                         onSelectOccurrence({
                           event,
                           instanceDate: event.instanceDate,
@@ -357,7 +357,7 @@ function DaySchedule({
                           eventTypeId: event.renderedEventTypeId,
                           startTime: `${String(event.startHour).padStart(2, '0')}:${String(event.startMinute).padStart(2, '0')}`,
                           endTime: `${String(event.endHour).padStart(2, '0')}:${String(event.endMinute).padStart(2, '0')}`,
-                        })
+                        }, { x: clickEvent.clientX, y: clickEvent.clientY })
                       }
                     />
                   );
@@ -381,7 +381,7 @@ function DaySchedule({
                         left: totalColumns > 1 ? `${column * slotWidth}%` : '0',
                         width: totalColumns > 1 ? `${slotWidth}%` : '100%',
                       }}
-                      onClick={() =>
+                      onClick={(clickEvent) =>
                         onSelectOccurrence({
                           event,
                           instanceDate: event.instanceDate,
@@ -390,7 +390,7 @@ function DaySchedule({
                           eventTypeId: event.renderedEventTypeId,
                           startTime: `${String(event.startHour).padStart(2, '0')}:${String(event.startMinute).padStart(2, '0')}`,
                           endTime: `${String(event.endHour).padStart(2, '0')}:${String(event.endMinute).padStart(2, '0')}`,
-                        })
+                        }, { x: clickEvent.clientX, y: clickEvent.clientY })
                       }
                     >
                       {event.renderedTitle}
@@ -414,7 +414,7 @@ function WeekSchedule({
 }: {
   currentDate: Date;
   events: PlayerCalendarEvent[];
-  onSelectOccurrence: (occurrence: SelectedOccurrence) => void;
+  onSelectOccurrence: (occurrence: SelectedOccurrence, click: { x: number; y: number }) => void;
   eventTypeColors: Record<string, string>;
 }) {
   const scheduleRef = useRef<HTMLDivElement>(null);
@@ -500,7 +500,7 @@ function WeekSchedule({
                               left: totalColumns > 1 ? `${column * slotWidth}%` : '0',
                               width: totalColumns > 1 ? `${slotWidth}%` : '100%',
                             }}
-                            onClick={() =>
+                            onClick={(clickEvent) =>
                               onSelectOccurrence({
                                 event,
                                 instanceDate: event.instanceDate,
@@ -509,7 +509,7 @@ function WeekSchedule({
                                 eventTypeId: event.renderedEventTypeId,
                                 startTime: `${String(event.startHour).padStart(2, '0')}:${String(event.startMinute).padStart(2, '0')}`,
                                 endTime: `${String(event.endHour).padStart(2, '0')}:${String(event.endMinute).padStart(2, '0')}`,
-                              })
+                              }, { x: clickEvent.clientX, y: clickEvent.clientY })
                             }
                           />
                         );
@@ -534,7 +534,7 @@ function WeekSchedule({
                               left: totalColumns > 1 ? `${column * slotWidth}%` : '0',
                               width: totalColumns > 1 ? `${slotWidth}%` : '100%',
                             }}
-                            onClick={() =>
+                            onClick={(clickEvent) =>
                               onSelectOccurrence({
                                 event,
                                 instanceDate: event.instanceDate,
@@ -543,7 +543,7 @@ function WeekSchedule({
                                 eventTypeId: event.renderedEventTypeId,
                                 startTime: `${String(event.startHour).padStart(2, '0')}:${String(event.startMinute).padStart(2, '0')}`,
                                 endTime: `${String(event.endHour).padStart(2, '0')}:${String(event.endMinute).padStart(2, '0')}`,
-                              })
+                              }, { x: clickEvent.clientX, y: clickEvent.clientY })
                             }
                           >
                             {event.renderedTitle}
@@ -604,6 +604,9 @@ export function PlayerCalendar({ events, eventTypeColors = {}, className, onEdit
   }, [events, selectedOccurrenceRef]);
 
   const viewLabel = view === 'Week' ? `Week of ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'MMM d')}` : format(currentDate, 'MMM d, yyyy');
+  const handleSelectOccurrence = (occurrence: SelectedOccurrence) => {
+    setSelectedOccurrenceRef({ eventId: occurrence.event.id, instanceDate: occurrence.instanceDate });
+  };
 
   return (
     <section className={`glass-card flex min-h-[620px] flex-col p-4 sm:p-5 ${className ?? ''}`}>
@@ -649,7 +652,7 @@ export function PlayerCalendar({ events, eventTypeColors = {}, className, onEdit
           <DaySchedule
             date={currentDate}
             events={events}
-            onSelectOccurrence={(occurrence) => setSelectedOccurrenceRef({ eventId: occurrence.event.id, instanceDate: occurrence.instanceDate })}
+            onSelectOccurrence={handleSelectOccurrence}
             eventTypeColors={eventTypeColors}
           />
         ) : null}
@@ -659,14 +662,14 @@ export function PlayerCalendar({ events, eventTypeColors = {}, className, onEdit
               <DaySchedule
                 date={currentDate}
                 events={events}
-                onSelectOccurrence={(occurrence) => setSelectedOccurrenceRef({ eventId: occurrence.event.id, instanceDate: occurrence.instanceDate })}
+                onSelectOccurrence={handleSelectOccurrence}
                 eventTypeColors={eventTypeColors}
               />
             </div>
             <WeekSchedule
               currentDate={currentDate}
               events={events}
-              onSelectOccurrence={(occurrence) => setSelectedOccurrenceRef({ eventId: occurrence.event.id, instanceDate: occurrence.instanceDate })}
+              onSelectOccurrence={handleSelectOccurrence}
               eventTypeColors={eventTypeColors}
             />
           </>

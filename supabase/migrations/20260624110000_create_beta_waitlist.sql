@@ -10,9 +10,7 @@ CREATE TABLE IF NOT EXISTS public.beta_waitlist (
   reason TEXT,
   status TEXT DEFAULT 'pending'
 );
-
 ALTER TABLE public.beta_waitlist ENABLE ROW LEVEL SECURITY;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -52,5 +50,4 @@ BEGIN
   END IF;
 END;
 $$;
-
 GRANT INSERT ON public.beta_waitlist TO anon, authenticated;
