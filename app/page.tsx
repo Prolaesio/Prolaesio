@@ -3,7 +3,20 @@
 import React from 'react';
 import Link from 'next/link';
 import { format, isTomorrow } from 'date-fns';
-import { Bell, Calendar as CalendarIcon, ChevronRight, ShieldAlert, X } from 'lucide-react';
+import {
+  BatteryMedium,
+  Bell,
+  Brain,
+  Calendar as CalendarIcon,
+  ChevronRight,
+  CirclePlus,
+  Dumbbell,
+  Moon,
+  ShieldAlert,
+  X,
+  Zap,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { PlayerRsvpControl } from '@/components/calendar/PlayerRsvpControl';
 import { ReadinessGauge } from '@/components/ReadinessGauge';
 import { useAuth } from '@/lib/AuthContext';
@@ -44,6 +57,13 @@ interface HomeReminderNotificationItem extends HomeNotificationBase {
 
 type HomeNotificationItem = HomeEventNotificationItem | HomeReminderNotificationItem;
 
+interface ReadinessMetricCardProps {
+  label: string;
+  score: number;
+  colorScore?: number;
+  Icon: LucideIcon;
+}
+
 function normalizeNotificationDismissals(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
 
@@ -58,6 +78,62 @@ function getNotificationId(occurrence: HomeCalendarOccurrence): string {
     occurrence.end.toISOString(),
     occurrence.eventTypeId,
   ].join('|');
+}
+
+function interpolateColor(start: [number, number, number], end: [number, number, number], progress: number): string {
+  const channel = (index: number) => Math.round(start[index] + (end[index] - start[index]) * progress);
+  return `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`;
+}
+
+function getScoreStatusColor(score: number): string {
+  const normalizedScore = Math.max(0, Math.min(100, score));
+  const red: [number, number, number] = [255, 61, 61];
+  const yellow: [number, number, number] = [255, 181, 31];
+  const green: [number, number, number] = [32, 240, 107];
+
+  if (normalizedScore <= 30) {
+    return interpolateColor(red, red, 0);
+  }
+
+  if (normalizedScore <= 65) {
+    return interpolateColor(red, yellow, (normalizedScore - 30) / 35);
+  }
+
+  return interpolateColor(yellow, green, (normalizedScore - 65) / 35);
+}
+
+function ReadinessMetricCard({ label, score, colorScore = score, Icon }: ReadinessMetricCardProps) {
+  const normalizedScore = Math.max(0, Math.min(100, Math.round(score)));
+  const normalizedColorScore = Math.max(0, Math.min(100, Math.round(colorScore)));
+  const color = getScoreStatusColor(normalizedColorScore);
+
+  return (
+    <div
+      className="relative h-[52px] overflow-hidden rounded-lg border bg-[rgba(17,17,16,0.9)] px-2.5 py-2 shadow-[0_10px_24px_rgba(0,0,0,0.34)] backdrop-blur-md"
+      style={{
+        borderColor: color,
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/25 text-white">
+          <Icon size={15} strokeWidth={2.4} />
+        </div>
+        <p className="min-w-0 truncate text-[8px] font-black uppercase leading-none tracking-normal text-white/95">{label}</p>
+      </div>
+      <div className="mt-1.5 flex items-center gap-2">
+        <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/[0.09]">
+          <div
+            className="h-full rounded-full transition-all duration-1000"
+            style={{
+              width: `${normalizedScore}%`,
+              background: color,
+            }}
+          />
+        </div>
+        <span className="min-w-5 text-right text-[11px] font-black leading-none text-white">{normalizedScore}</span>
+      </div>
+    </div>
+  );
 }
 
 function DismissibleNotificationCard({
@@ -236,7 +312,20 @@ export default function Home() {
 
   const activeInjuries = injuries.filter((injury) => injury.status === 'active');
   const showInjuryAlert = activeInjuries.length > 0 || load.hasAutoInjury;
+  const todayKey = format(now, 'yyyy-MM-dd');
+  const todayWellness = wellnessLogs[todayKey];
+  const painScore = todayWellness?.painActive ? (todayWellness.painLevel ?? 0) * 10 : 0;
   const windowEnd = React.useMemo(() => new Date(now.getTime() + 24 * 60 * 60 * 1000), [now]);
+  const leftReadinessMetrics = [
+    { label: 'Sleep', score: readiness.breakdown.sleep, Icon: Moon },
+    { label: 'Energy', score: readiness.breakdown.energy, Icon: Zap },
+    { label: 'Stress', score: readiness.breakdown.stress, Icon: Brain },
+  ];
+  const rightReadinessMetrics = [
+    { label: 'Fatigue', score: readiness.breakdown.fatigue, Icon: BatteryMedium },
+    { label: 'Load', score: readiness.breakdown.load, Icon: Dumbbell },
+    { label: 'Pain', score: painScore, colorScore: 100 - painScore, Icon: CirclePlus },
+  ];
 
   const scheduleOccurrences = React.useMemo(() => {
     return getCalendarOccurrencesInWindow(calendarEvents, now, windowEnd)
@@ -332,14 +421,16 @@ export default function Home() {
   );
 
   return (
-    <div className="px-4 py-8 max-w-md mx-auto">
-      <header className="mb-8 pl-1">
-        <h1 className="text-3xl font-bold text-white tracking-tight">Lodario</h1>
-        <p className="text-sm text-[var(--accent-secondary)] mt-1 font-medium">Your personal training guide</p>
+    <div className="relative mx-auto max-w-md px-2.5 py-8">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[360px] bg-[linear-gradient(180deg,rgba(34,197,94,0.07),rgba(255,146,43,0.045)_48%,transparent)]" />
+
+      <header className="relative mb-6 pl-1.5">
+        <h1 className="text-4xl font-black tracking-normal text-white">Prolaesio</h1>
+        <p className="mt-1 text-base font-semibold text-[var(--accent-secondary)]">Your personal training guide</p>
       </header>
 
       {showInjuryAlert ? (
-        <div className="mb-6 glass-card p-4 flex items-start space-x-3 bg-[rgba(255,107,107,0.1)] border-[#ff6b6b] animate-slide-up touch-target">
+        <div className="relative mb-6 flex items-start space-x-3 rounded-lg border border-[#ff6b6b] bg-[rgba(255,107,107,0.09)] p-4 shadow-[0_12px_28px_rgba(0,0,0,0.3)] backdrop-blur-md animate-slide-up touch-target">
           <ShieldAlert className="text-[#ff6b6b] mt-0.5" size={24} />
           <div>
             <h3 className="text-[#ff6b6b] font-bold text-sm tracking-wide">Active Protocol</h3>
@@ -352,32 +443,30 @@ export default function Home() {
         </div>
       ) : null}
 
-      <section className="mb-6 flex justify-center">
-        <ReadinessGauge score={readiness.score} color={readiness.color} label={readiness.label} />
-      </section>
-
-      <section className="mb-8 grid grid-cols-5 gap-2 animate-fade-in" style={{ animationDelay: '0.2s', animationFillMode: 'both' }}>
-        {[
-          { label: 'Sleep', score: readiness.breakdown.sleep },
-          { label: 'Energy', score: readiness.breakdown.energy },
-          { label: 'Fatigue', score: readiness.breakdown.fatigue },
-          { label: 'Stress', score: readiness.breakdown.stress },
-          { label: 'Load', score: readiness.breakdown.load },
-        ].map((item) => (
-          <div key={item.label} className="glass-card p-2 flex flex-col items-center justify-center">
-            <span className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">{item.label}</span>
-            <div className="w-full bg-[rgba(255,255,255,0.1)] h-1 rounded-full overflow-hidden mt-1">
-              <div
-                className="h-full bg-[var(--accent-primary)] rounded-full transition-all duration-1000"
-                style={{ width: `${item.score}%` }}
-              />
-            </div>
-            <span className="text-xs text-white font-medium mt-1">{item.score}</span>
+      <section className="relative mb-6 animate-fade-in" style={{ animationDelay: '0.2s', animationFillMode: 'both' }}>
+        <div className="mb-2 flex items-center justify-center gap-3 px-1.5">
+          <div className="h-px flex-1 bg-[linear-gradient(90deg,transparent,rgba(255,146,43,0.85))]" />
+          <h2 className="shrink-0 text-sm font-black tracking-normal text-white">Daily Readiness</h2>
+          <div className="h-px flex-1 bg-[linear-gradient(90deg,rgba(255,146,43,0.85),transparent)]" />
+        </div>
+        <div className="grid grid-cols-[136px_112px_136px] justify-center items-center gap-3">
+          <div className="grid gap-2">
+            {leftReadinessMetrics.map((item) => (
+              <ReadinessMetricCard key={item.label} {...item} />
+            ))}
           </div>
-        ))}
+          <div className="flex justify-center">
+            <ReadinessGauge score={readiness.score} color={readiness.color} label={readiness.label} />
+          </div>
+          <div className="grid gap-2">
+            {rightReadinessMetrics.map((item) => (
+              <ReadinessMetricCard key={item.label} {...item} />
+            ))}
+          </div>
+        </div>
       </section>
 
-      <section className="mb-12 animate-slide-up" style={{ animationDelay: '0.3s', animationFillMode: 'both' }}>
+      <section className="relative mb-12 animate-slide-up" style={{ animationDelay: '0.3s', animationFillMode: 'both' }}>
         <div className="flex justify-between items-end mb-4 pl-1">
           <div>
             <h2 className="text-sm font-bold text-white uppercase tracking-wider font-sans">Notifications</h2>
