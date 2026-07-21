@@ -15,12 +15,7 @@ export function ReadinessGauge({ score, color, label }: ReadinessGaugeProps) {
 
   return (
     <div className="relative flex items-center justify-center animate-fade-in touch-target">
-      <div
-        className="absolute inset-1 rounded-full opacity-25 blur-lg"
-        style={{ background: color }}
-        aria-hidden="true"
-      />
-      <div className="relative flex h-[112px] w-[112px] items-center justify-center rounded-full bg-[radial-gradient(circle,rgba(18,35,24,0.76)_0%,rgba(10,10,9,0.68)_62%,rgba(10,10,9,0.4)_100%)]">
+      <div className="relative flex h-[clamp(96px,28vw,112px)] w-[clamp(96px,28vw,112px)] items-center justify-center rounded-full">
         <svg height={radius * 2} width={radius * 2} className="transform -rotate-90">
           <circle
             stroke="rgba(255,255,255,0.12)"
@@ -38,7 +33,7 @@ export function ReadinessGauge({ score, color, label }: ReadinessGaugeProps) {
             style={{
               strokeDashoffset,
               transition: 'stroke-dashoffset 1s ease-out',
-              filter: `drop-shadow(0 0 4px ${color})`,
+              filter: `drop-shadow(0 0 5px ${color})`,
             }}
             strokeLinecap="round"
             r={normalizedRadius}

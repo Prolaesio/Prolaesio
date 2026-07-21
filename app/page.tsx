@@ -449,7 +449,7 @@ export default function Home() {
           <h2 className="shrink-0 text-sm font-black tracking-normal text-white">Daily Readiness</h2>
           <div className="h-px flex-1 bg-[linear-gradient(90deg,rgba(255,146,43,0.85),transparent)]" />
         </div>
-        <div className="grid grid-cols-[136px_112px_136px] justify-center items-center gap-3">
+        <div className="grid grid-cols-[minmax(86px,120px)_clamp(96px,28vw,112px)_minmax(86px,120px)] justify-center items-center gap-[clamp(4px,1.4vw,12px)]">
           <div className="grid gap-2">
             {leftReadinessMetrics.map((item) => (
               <ReadinessMetricCard key={item.label} {...item} />
