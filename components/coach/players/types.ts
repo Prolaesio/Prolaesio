@@ -1,4 +1,4 @@
-export type PlayerViewMode = 'analytics' | 'calendar';
+export type PlayerViewMode = 'sheet' | 'analytics' | 'calendar';
 
 export type PlayerSessionType = string;
 export type PlayerCalendarRecurrence = 'none' | 'daily' | 'weekly' | 'monthly';
@@ -115,8 +115,45 @@ export interface PlayerAnalyticsData {
     energyScore: number;
     fatigueScore: number;
     stressScore: number;
+    acuteTrainingLoad: number;
     loadScore: number;
   }>;
+}
+
+export interface PlayerSheetCoachSession {
+  id: string;
+  name: string;
+  type: string;
+  scheduledAt: string;
+  scope: 'Team' | 'Individual';
+  logged: boolean;
+  details: PlayerSheetSessionDetails;
+}
+
+export interface PlayerSheetSessionDetails {
+  event: PlayerCalendarEvent;
+  instanceDate: string;
+  title: string;
+  description?: string;
+  eventTypeId: string;
+  startTime: string;
+  endTime: string;
+}
+
+export interface PlayerSheetAttendanceItem {
+  date: string;
+  eventGroupId: string;
+  name: string;
+  type: string;
+  scheduledAt: string;
+  scope: 'Team' | 'Individual';
+  attended: boolean;
+  details: PlayerSheetSessionDetails;
+}
+
+export interface PlayerSheetData {
+  coachSessionsLast24Hours: PlayerSheetCoachSession[];
+  attendanceHistory: PlayerSheetAttendanceItem[];
 }
 
 export interface TeamPlayerDataset {
@@ -131,6 +168,7 @@ export interface TeamPlayerDataset {
   wellnessNotes: PlayerNoteItem[];
   trainingNotes: PlayerNoteItem[];
   injuryStatus: PlayerInjuryStatus;
+  sheet: PlayerSheetData;
   todaysGuidance: string | null;
   todaysRecommendation: {
     score: number;

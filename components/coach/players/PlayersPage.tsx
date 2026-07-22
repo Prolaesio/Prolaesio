@@ -5,16 +5,19 @@ import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { useCoachTeam } from '@/lib/coach/selectedTeam';
 import { useData } from '@/lib/DataContext';
 import { usePersistedState } from '@/lib/usePersistedState';
+import { AnalyticsHistorySelect } from '@/components/coach/analytics/AnalyticsHistorySelect';
+import { filterAnalyticsPoints, getHistoryMinDateTime, type AnalyticsHistoryRange } from '@/components/coach/analytics/historyRange';
 import { PlayerAnalyticsChart } from '@/components/coach/players/PlayerAnalyticsChart';
 import { PlayerAnalyticsLegend } from '@/components/coach/players/PlayerAnalyticsLegend';
 import { IndividualEventCreator } from '@/components/coach/players/IndividualEventCreator';
 import { PlayerCalendar, type SelectedOccurrence } from '@/components/coach/players/PlayerCalendar';
 import { PlayerProfileCard } from '@/components/coach/players/PlayerProfileCard';
 import { PlayerSelectorDropdown } from '@/components/coach/players/PlayerSelectorDropdown';
+import { PlayerSheetView } from '@/components/coach/players/PlayerSheetView';
 import { PlayerViewToggle } from '@/components/coach/players/PlayerViewToggle';
 import { WellnessMetricsPanel } from '@/components/coach/players/WellnessMetricsPanel';
 import { loadRealTeamPlayerDatasets } from '@/components/coach/players/realData';
-import type { PlayerInjuryStatus, PlayerNoteItem, PlayerViewMode, TeamPlayerDataset } from '@/components/coach/players/types';
+import type { PlayerAnalyticsData, PlayerInjuryStatus, PlayerNoteItem, PlayerViewMode, TeamPlayerDataset } from '@/components/coach/players/types';
 
 function NotesSection({
   title,
@@ -168,9 +171,17 @@ function AnalyticsView({ playerDataset }: { playerDataset: TeamPlayerDataset }) 
             title="Multi-Factor Inputs vs Readiness Score"
             data={playerDataset.analytics.multiFactorReadiness}
             leftDomain={[0, 100]}
+            rightDomain={[0, 950]}
             interactiveLegend
             series={[
-              { dataKey: 'readinessScore', name: 'Readiness Score', color: 'var(--metric-readiness)', type: 'bar' },
+              {
+                dataKey: 'acuteTrainingLoad',
+                name: 'Acute Training Load',
+                color: 'var(--metric-load)',
+                type: 'bar',
+                yAxisId: 'right',
+              },
+              { dataKey: 'readinessScore', name: 'Readiness Score', color: 'var(--metric-readiness)' },
               { dataKey: 'sleepScore', name: 'Sleep Score', color: 'var(--metric-sleep-score)' },
               { dataKey: 'energyScore', name: 'Energy', color: 'var(--metric-energy)' },
               { dataKey: 'fatigueScore', name: 'Fatigue', color: 'var(--metric-fatigue)' },
@@ -188,6 +199,25 @@ function AnalyticsView({ playerDataset }: { playerDataset: TeamPlayerDataset }) 
       </div>
     </div>
   );
+}
+
+function getFilteredPlayerAnalytics(analytics: PlayerAnalyticsData, historyRange: AnalyticsHistoryRange): PlayerAnalyticsData {
+  const minDateTime = getHistoryMinDateTime([
+    analytics.readinessTrend,
+    analytics.energyFatigueLoad,
+    analytics.sleepQualityAndTiming,
+    analytics.stressVsSleepScore,
+    analytics.multiFactorReadiness,
+  ], historyRange);
+  if (minDateTime == null) return analytics;
+
+  return {
+    readinessTrend: filterAnalyticsPoints(analytics.readinessTrend, minDateTime),
+    energyFatigueLoad: filterAnalyticsPoints(analytics.energyFatigueLoad, minDateTime),
+    sleepQualityAndTiming: filterAnalyticsPoints(analytics.sleepQualityAndTiming, minDateTime),
+    stressVsSleepScore: filterAnalyticsPoints(analytics.stressVsSleepScore, minDateTime),
+    multiFactorReadiness: filterAnalyticsPoints(analytics.multiFactorReadiness, minDateTime),
+  };
 }
 
 const analyticsLegendItems = [
@@ -276,7 +306,8 @@ function CalendarView({
 export function PlayersPage() {
   const { selectedTeam } = useCoachTeam();
   const { customEventTypes } = useData();
-  const [viewMode, setViewMode] = usePersistedState<PlayerViewMode>('lodario:coach-players:view', 'analytics');
+  const [viewMode, setViewMode] = useState<PlayerViewMode>('sheet');
+  const [historyRange, setHistoryRange] = usePersistedState<AnalyticsHistoryRange>('lodario:coach-players:history-range', 'unlimited');
   const [teamPlayers, setTeamPlayers] = useState<TeamPlayerDataset[]>([]);
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(false);
   const [playersError, setPlayersError] = useState<string | null>(null);
@@ -334,6 +365,13 @@ export function PlayersPage() {
   const selectedPlayerDataset = useMemo(() => {
     return teamPlayers.find((dataset) => dataset.player.id === selectedPlayerId) ?? teamPlayers[0];
   }, [selectedPlayerId, teamPlayers]);
+  const filteredSelectedPlayerDataset = useMemo(() => {
+    if (!selectedPlayerDataset) return undefined;
+    return {
+      ...selectedPlayerDataset,
+      analytics: getFilteredPlayerAnalytics(selectedPlayerDataset.analytics, historyRange),
+    };
+  }, [historyRange, selectedPlayerDataset]);
   const editingEvent = useMemo(() => {
     if (!editingEventId) return null;
     return teamPlayers.flatMap((dataset) => dataset.calendarEvents).find((event) => event.id === editingEventId) ?? null;
@@ -410,66 +448,80 @@ export function PlayersPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-gray-300">View:</span>
-          <PlayerViewToggle value={viewMode} onChange={setViewMode} />
+        <div className="flex flex-wrap items-center gap-3">
+          {viewMode === 'analytics' ? (
+            <AnalyticsHistorySelect value={historyRange} onChange={setHistoryRange} />
+          ) : null}
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-300">View:</span>
+            <PlayerViewToggle value={viewMode} onChange={setViewMode} />
+          </div>
         </div>
       </header>
 
-      <section className="flex justify-start">
-        <PlayerSelectorDropdown
+      {viewMode === 'sheet' ? (
+        <PlayerSheetView
           players={teamPlayers}
-          selectedPlayerId={selectedPlayerId}
-          onSelectPlayer={setSelectedPlayerId}
+          onAttendanceUpdated={() => setRefreshVersion((version) => version + 1)}
         />
-      </section>
-
-      <div
-        className={`grid ${
-          viewMode === 'calendar'
-            ? 'gap-4 xl:grid-cols-[250px_minmax(0,1fr)_340px] xl:items-stretch'
-            : 'gap-5 xl:grid-cols-[290px_minmax(0,1fr)]'
-        }`}
-      >
-        <div className="space-y-4">
-          <PlayerProfileCard player={selectedPlayerDataset.player} teamName={selectedTeam.name} />
-          <DailyWellnessStatusStrip
-            completedToday={selectedPlayerDataset.dailyWellness.completedToday}
-            isChecking={isLoadingPlayers}
-          />
-          {viewMode === 'analytics' ? (
-            <InjuryStatusCard
-              injuryStatus={selectedPlayerDataset.injuryStatus}
-              todaysGuidance={selectedPlayerDataset.todaysGuidance}
-              todaysRecommendation={selectedPlayerDataset.todaysRecommendation}
+      ) : (
+        <>
+          <section className="flex justify-start">
+            <PlayerSelectorDropdown
+              players={teamPlayers}
+              selectedPlayerId={selectedPlayerId}
+              onSelectPlayer={setSelectedPlayerId}
             />
-          ) : null}
-          {viewMode === 'calendar' ? <WellnessMetricsPanel metrics={selectedPlayerDataset.wellness} /> : null}
-        </div>
-        {viewMode === 'analytics' ? (
-          <AnalyticsView playerDataset={selectedPlayerDataset} />
-        ) : (
-          <CalendarView
-            playerDataset={selectedPlayerDataset}
-            teamPlayerIds={teamPlayerIds}
-            editingEvent={editingEvent}
-            editingInstanceDate={editingInstanceDate}
-            editingSourceEventIds={editingSourceEventIds}
-            onEditEvent={(occurrence) => {
-              setEditingEventId(occurrence.event.id);
-              setEditingInstanceDate(occurrence.instanceDate);
-            }}
-            onCancelEdit={() => {
-              setEditingEventId(null);
-              setEditingInstanceDate(null);
-            }}
-            onEventCreated={() => {
-              setRefreshVersion((version) => version + 1);
-            }}
-            eventTypeColors={eventTypeColors}
-          />
-        )}
-      </div>
+          </section>
+
+          <div
+            className={`grid ${
+              viewMode === 'calendar'
+                ? 'gap-4 xl:grid-cols-[250px_minmax(0,1fr)_340px] xl:items-stretch'
+                : 'gap-5 xl:grid-cols-[290px_minmax(0,1fr)]'
+            }`}
+          >
+            <div className="space-y-4">
+              <PlayerProfileCard player={selectedPlayerDataset.player} teamName={selectedTeam.name} />
+              <DailyWellnessStatusStrip
+                completedToday={selectedPlayerDataset.dailyWellness.completedToday}
+                isChecking={isLoadingPlayers}
+              />
+              {viewMode === 'analytics' ? (
+                <InjuryStatusCard
+                  injuryStatus={selectedPlayerDataset.injuryStatus}
+                  todaysGuidance={selectedPlayerDataset.todaysGuidance}
+                  todaysRecommendation={selectedPlayerDataset.todaysRecommendation}
+                />
+              ) : null}
+              {viewMode === 'calendar' ? <WellnessMetricsPanel metrics={selectedPlayerDataset.wellness} /> : null}
+            </div>
+            {viewMode === 'analytics' ? (
+              <AnalyticsView playerDataset={filteredSelectedPlayerDataset ?? selectedPlayerDataset} />
+            ) : (
+              <CalendarView
+                playerDataset={selectedPlayerDataset}
+                teamPlayerIds={teamPlayerIds}
+                editingEvent={editingEvent}
+                editingInstanceDate={editingInstanceDate}
+                editingSourceEventIds={editingSourceEventIds}
+                onEditEvent={(occurrence) => {
+                  setEditingEventId(occurrence.event.id);
+                  setEditingInstanceDate(occurrence.instanceDate);
+                }}
+                onCancelEdit={() => {
+                  setEditingEventId(null);
+                  setEditingInstanceDate(null);
+                }}
+                onEventCreated={() => {
+                  setRefreshVersion((version) => version + 1);
+                }}
+                eventTypeColors={eventTypeColors}
+              />
+            )}
+          </div>
+        </>
+      )}
 
     </div>
   );

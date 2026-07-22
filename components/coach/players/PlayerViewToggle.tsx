@@ -6,6 +6,7 @@ interface PlayerViewToggleProps {
 }
 
 const viewOptions: Array<{ id: PlayerViewMode; label: string }> = [
+  { id: 'sheet', label: 'Sheet' },
   { id: 'analytics', label: 'Analytics' },
   { id: 'calendar', label: 'Calendar' },
 ];
@@ -18,7 +19,7 @@ export function PlayerViewToggle({ value, onChange }: PlayerViewToggleProps) {
           key={option.id}
           type="button"
           onClick={() => onChange(option.id)}
-          className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+          className={`rounded-full px-3 py-2 text-sm font-semibold transition-colors sm:px-4 ${
             value === option.id
               ? 'bg-[var(--card-bg)] text-white shadow-sm'
               : 'text-gray-400 hover:text-white'

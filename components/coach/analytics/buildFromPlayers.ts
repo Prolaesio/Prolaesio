@@ -2,7 +2,6 @@ import { format } from 'date-fns';
 import type { TeamPlayerDataset } from '@/components/coach/players/types';
 import {
   getTeamReadinessForDate,
-  getTeamTrainingAverageForDate,
   getTeamTrainingLoadForDate,
 } from '@/lib/coach/teamMetrics';
 import {
@@ -147,14 +146,8 @@ function buildTeamAverageSeries(players: TeamPlayerDataset[]) {
         energyScore: roundTo(mean(points.map((point) => point.energyScore)), 0),
         fatigueScore: roundTo(mean(points.map((point) => point.fatigueScore)), 0),
         stressScore: roundTo(mean(points.map((point) => point.stressScore)), 0),
-        loadScore: roundTo(
-          getTeamTrainingAverageForDate(
-            players,
-            date,
-            (dataset) => dataset.analytics.multiFactorReadiness.find((point) => point.date === date)?.loadScore
-          ) ?? 0,
-          0
-        ),
+        acuteTrainingLoad: roundTo(mean(points.map((point) => point.acuteTrainingLoad)), 0),
+        loadScore: roundTo(mean(points.map((point) => point.loadScore)), 0),
       }];
     }),
   };

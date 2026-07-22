@@ -19,6 +19,7 @@ import {
   parseOverrideMap,
   parseRecurrence,
   parseRecurrenceConfig,
+  resolveCalendarOccurrence,
 } from '@/lib/calendar/events';
 import type { CalendarEvent, InjuryRecord, TrainingLog, UserProfile, WellnessLog } from '@/lib/types';
 import type {
@@ -384,6 +385,46 @@ function buildPainSignals(
   ];
 }
 
+async function loadCoachEventTypeActivity(coachIds: string[], eventTypeIds: string[]): Promise<{
+  activityByCoachAndType: Map<string, boolean>;
+  error: string | null;
+}> {
+  if (coachIds.length === 0 || eventTypeIds.length === 0) {
+    return { activityByCoachAndType: new Map(), error: null };
+  }
+
+  const { data, error } = await supabase
+    .from('custom_event_types')
+    .select('id, user_id, is_activity, is_deleted')
+    .in('user_id', coachIds)
+    .in('id', eventTypeIds);
+
+  if (error) {
+    return {
+      activityByCoachAndType: new Map(),
+      error: error.message || 'Unable to load coach event type activity settings.',
+    };
+  }
+
+  const activityByCoachAndType = new Map<string, boolean>();
+  for (const row of (data ?? []) as EventTypeActivityRow[]) {
+    activityByCoachAndType.set(
+      `${row.user_id}:${row.id}`,
+      row.is_deleted !== true && row.is_activity === true
+    );
+  }
+
+  return { activityByCoachAndType, error: null };
+}
+
+interface AttendanceRow {
+  player_id: string;
+  event_group_id: string;
+  occurrence_date: string;
+  rsvp_status: 'going' | 'not_going' | null;
+  attendance_status: 'did' | 'did_not' | null;
+}
+
 function resolveInjuryStatus(
   rows: InjuryRow[] | undefined,
   injuryQueryError: string | null,
@@ -627,11 +668,14 @@ function buildDatasetForPlayer(params: {
   wellnessRows: WellnessRow[];
   trainingRows: TrainingRow[];
   calendarRows: CalendarRow[];
+  teamCalendarRows: CalendarRow[];
   activityByPlayerAndType: Map<string, boolean>;
+  activityByCoachAndType: Map<string, boolean>;
   injuryRows: InjuryRow[] | undefined;
   injuryQueryError: string | null;
+  attendanceRows: AttendanceRow[];
 }): TeamPlayerDataset {
-  const { player, wellnessRows, trainingRows, calendarRows, activityByPlayerAndType, injuryRows, injuryQueryError } = params;
+  const { player, wellnessRows, trainingRows, calendarRows, teamCalendarRows, activityByPlayerAndType, activityByCoachAndType, injuryRows, injuryQueryError, attendanceRows } = params;
   const wellnessLogs = mapWellnessRowsToWellnessLogs(wellnessRows);
   const trainingLogs = mapTrainingRowsToTrainingLogs(trainingRows);
   const currentLoad = analyzeTrainingLoad(trainingLogs, wellnessLogs);
@@ -642,8 +686,7 @@ function buildDatasetForPlayer(params: {
     ...wellnessRows.map((row) => row.date),
     ...trainingRows.map((row) => row.date),
   ]))
-    .sort((a, b) => a.localeCompare(b))
-    .slice(-14);
+    .sort((a, b) => a.localeCompare(b));
 
   const analyticsRows = analyticsDates.map((dateValue) => {
     const wellness = wellnessRows.find((row) => row.date === dateValue);
@@ -693,6 +736,185 @@ function buildDatasetForPlayer(params: {
   });
   const sortedCalendarRows = dedupeCalendarEventsById(calendarRows)
     .sort((a, b) => a.start_time.localeCompare(b.start_time));
+  const nowTime = Date.now();
+  const last24HoursTime = nowTime - 24 * 60 * 60 * 1000;
+  const trainingSessionsLast24Hours = trainingRows
+    .filter((row) => {
+      const loggedTime = new Date(row.created_at).getTime();
+      return Number.isFinite(loggedTime) && loggedTime >= last24HoursTime && loggedTime <= nowTime;
+    })
+    .sort((first, second) => second.created_at.localeCompare(first.created_at))
+    .map((row) => ({
+      id: row.id,
+      name: row.session_type || 'Training session',
+      type: row.session_type || 'Training',
+      date: row.date,
+      scope: 'Individual' as const,
+    }));
+  const today = new Date();
+  const sessionHistoryDates = Array.from({ length: 30 }, (_, dayOffset) => {
+    const date = new Date(today);
+    date.setDate(date.getDate() - dayOffset);
+    return format(date, 'yyyy-MM-dd');
+  });
+  const coachSessionRows = Array.from(teamCalendarRows.reduce<Map<string, CalendarRow>>((rowsByGroup, row) => {
+    const meta = parseCoachCalendarMeta(row.recurrence_config);
+    if (!meta?.coachManaged || meta.kind === 'task' || meta.published === false) return rowsByGroup;
+    if (meta.teamId && meta.teamId !== player.teamId) return rowsByGroup;
+
+    const assignmentScope = meta.assignmentScope === 'team' ? 'team' : 'player';
+    const assignedPlayerId = meta.assignedPlayerId ?? row.user_id;
+    if (assignmentScope === 'player' && assignedPlayerId !== player.id) return rowsByGroup;
+
+    const groupKey = meta.eventGroupId
+      ? `${assignmentScope}:${meta.eventGroupId}`
+      : `${assignmentScope}:${row.id}`;
+    if (!rowsByGroup.has(groupKey)) rowsByGroup.set(groupKey, row);
+    return rowsByGroup;
+  }, new Map()).values());
+  const coachSessionOccurrences = coachSessionRows.flatMap((row) => {
+    const start = toDateAndTime(row.start_time);
+    const end = toDateAndTime(row.end_time);
+    const meta = parseCoachCalendarMeta(row.recurrence_config);
+    const recurrence = parseRecurrence(row.recurrence);
+    const recurrenceConfig = parseRecurrenceConfig(row.recurrence_config);
+    const excludedDates = parseExcludedDates(row.excluded_dates);
+    const overrides = parseOverrideMap(row.overrides);
+    const assignmentScope = meta?.assignmentScope === 'team' ? 'team' as const : 'player' as const;
+    const calendarEvent = {
+      id: row.id,
+      playerId: player.id,
+      teamId: meta?.teamId ?? player.teamId,
+      title: row.title || row.event_type_id || 'Session',
+      type: mapEventTypeIdToPlayerSessionType(row.event_type_id),
+      kind: 'event' as const,
+      description: row.description ?? undefined,
+      assignmentScope,
+      coachManaged: true,
+      visibleInCoachPlayerCalendar: true,
+      recurrence,
+      recurrenceConfig,
+      recurrenceEndDate: row.recurrence_end_date,
+      anticipatedIntensity: row.anticipated_intensity ?? undefined,
+      overrides,
+      excludedDates,
+      isDraft: false,
+      sourceEventGroupId: meta?.eventGroupId ?? null,
+      date: start.date,
+      startTime: start.time,
+      endTime: end.time,
+      startDate: start.date,
+      endDate: end.date,
+    };
+    const configuredActivity = meta?.coachId
+      ? activityByCoachAndType.get(`${meta.coachId}:${row.event_type_id}`)
+      : undefined;
+    const isActivity = configuredActivity
+      ?? (isBuiltInActivityEventType(row.event_type_id) || row.anticipated_intensity != null);
+    return sessionHistoryDates.flatMap((dateKey) => {
+      const occurrence = resolveCalendarOccurrence({
+        date: start.date,
+        startDate: start.date,
+        endDate: end.date,
+        startTime: start.time,
+        endTime: end.time,
+        kind: 'event',
+        title: row.title || row.event_type_id || 'Session',
+        description: row.description ?? undefined,
+        eventTypeId: row.event_type_id,
+        recurrence,
+        recurrenceConfig,
+        recurrenceEndDate: row.recurrence_end_date,
+        excludedDates,
+        overrides,
+        anticipatedIntensity: row.anticipated_intensity,
+      }, dateKey);
+      if (!occurrence) return [];
+      const occurrenceStart = new Date(`${dateKey}T${occurrence.startTime}:00`);
+      const occurrenceEnd = new Date(`${dateKey}T${occurrence.endTime}:00`);
+      if (occurrenceEnd.getTime() <= occurrenceStart.getTime()) {
+        occurrenceEnd.setDate(occurrenceEnd.getDate() + 1);
+      }
+      if (!Number.isFinite(occurrenceStart.getTime()) || !Number.isFinite(occurrenceEnd.getTime())) return [];
+
+      return [{
+        id: `${meta?.eventGroupId ?? row.id}:${dateKey}`,
+        eventGroupId: meta?.eventGroupId ?? row.id,
+        date: dateKey,
+        name: occurrence.title,
+        type: occurrence.eventTypeId,
+        scheduledAt: occurrenceStart.toISOString(),
+        scope: meta?.assignmentScope === 'team' ? 'Team' as const : 'Individual' as const,
+        isActivity,
+        startTime: occurrenceStart.getTime(),
+        endTime: occurrenceEnd.getTime(),
+        details: {
+          event: calendarEvent,
+          instanceDate: dateKey,
+          title: occurrence.title,
+          description: occurrence.description,
+          eventTypeId: occurrence.eventTypeId,
+          startTime: occurrence.startTime,
+          endTime: occurrence.endTime,
+        },
+      }];
+    });
+  });
+  const coachOccurrencesLast24Hours = coachSessionOccurrences.filter(
+    (occurrence) => occurrence.isActivity
+      && occurrence.startTime >= last24HoursTime
+      && occurrence.startTime <= nowTime
+  );
+  const unmatchedTrainingSessions = [...trainingSessionsLast24Hours];
+  const normalizeSessionLabel = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  const coachSessionsLast24Hours = coachOccurrencesLast24Hours.map((occurrence) => {
+    const occurrenceDate = format(new Date(occurrence.startTime), 'yyyy-MM-dd');
+    const normalizedType = normalizeSessionLabel(occurrence.type);
+    const normalizedName = normalizeSessionLabel(occurrence.name);
+    let matchingLogIndex = unmatchedTrainingSessions.findIndex((session) => {
+      if (session.date !== occurrenceDate) return false;
+      const loggedType = normalizeSessionLabel(session.type);
+      return loggedType === normalizedType
+        || normalizedType.includes(loggedType)
+        || loggedType.includes(normalizedType)
+        || normalizedName.includes(loggedType);
+    });
+    if (matchingLogIndex < 0) {
+      matchingLogIndex = unmatchedTrainingSessions.findIndex(
+        (session) => session.date === occurrenceDate
+      );
+    }
+    const logged = matchingLogIndex >= 0;
+    if (logged) unmatchedTrainingSessions.splice(matchingLogIndex, 1);
+    return {
+      id: occurrence.id,
+      name: occurrence.name,
+      type: occurrence.type,
+      scheduledAt: occurrence.scheduledAt,
+      scope: occurrence.scope,
+      logged,
+      details: occurrence.details,
+    };
+  });
+  const attendanceHistory = coachSessionOccurrences
+    .filter((occurrence) => occurrence.endTime <= nowTime)
+    .map((occurrence) => {
+      const attendance = attendanceRows.find((row) => (
+        row.event_group_id === occurrence.eventGroupId && row.occurrence_date === occurrence.date
+      ));
+      const attended = attendance?.attendance_status === 'did'
+        || (attendance?.attendance_status == null && attendance?.rsvp_status === 'going');
+      return {
+        date: occurrence.date,
+        eventGroupId: occurrence.eventGroupId,
+        name: occurrence.name,
+        type: occurrence.type,
+        scheduledAt: occurrence.scheduledAt,
+        scope: occurrence.scope,
+        attended,
+        details: occurrence.details,
+      };
+    });
 
   return {
     player,
@@ -747,6 +969,7 @@ function buildDatasetForPlayer(params: {
         energyScore: row.energyScore,
         fatigueScore: row.fatigueScore,
         stressScore: row.stressScore,
+        acuteTrainingLoad: row.acuteTrainingLoad,
         loadScore: row.loadScore,
       })),
     },
@@ -787,6 +1010,10 @@ function buildDatasetForPlayer(params: {
     wellnessNotes: buildWellnessNotes(wellnessRows),
     trainingNotes: buildTrainingNotes(trainingRows),
     injuryStatus: resolveInjuryStatus(injuryRows, injuryQueryError, wellnessRows, trainingRows),
+    sheet: {
+      coachSessionsLast24Hours,
+      attendanceHistory,
+    },
     todaysGuidance: formatTodaysGuidance(todaysRecommendation),
     todaysRecommendation: todaysRecommendation
       ? {
@@ -819,7 +1046,8 @@ export async function loadRealTeamPlayerDatasets(teamId: string): Promise<{ data
 
   const playerIds = playerRows.map((row) => row.user_id);
 
-  const [wellnessResult, trainingResult, calendarResult, eventTypeActivityResult, injuriesResult] = await Promise.all([
+  const attendanceStartDate = format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
+  const [wellnessResult, trainingResult, calendarResult, eventTypeActivityResult, injuriesResult, attendanceResult] = await Promise.all([
     supabase
       .from('wellness_logs')
       .select('user_id, date, created_at, energy, fatigue, stress, sleep_quality, sleep_duration, sleep_time, wake_time, notes, pain_notes, pain_active, pain_level, is_injury')
@@ -837,6 +1065,13 @@ export async function loadRealTeamPlayerDatasets(teamId: string): Promise<{ data
       .select('id, user_id, description, expected_return, status, created_at')
       .in('user_id', playerIds)
       .order('created_at', { ascending: false }),
+    supabase
+      .from('calendar_event_attendance')
+      .select('player_id, event_group_id, occurrence_date, rsvp_status, attendance_status')
+      .eq('team_id', teamId)
+      .in('player_id', playerIds)
+      .gte('occurrence_date', attendanceStartDate)
+      .order('occurrence_date', { ascending: false }),
   ]);
 
   if (wellnessResult.error) {
@@ -863,6 +1098,19 @@ export async function loadRealTeamPlayerDatasets(teamId: string): Promise<{ data
     });
   }
 
+  const coachManagedCalendarRows = calendarRows.filter((row) => parseCoachCalendarMeta(row.recurrence_config)?.coachManaged === true);
+  const coachIds = Array.from(new Set(coachManagedCalendarRows
+    .map((row) => parseCoachCalendarMeta(row.recurrence_config)?.coachId)
+    .filter((coachId): coachId is string => Boolean(coachId))));
+  const coachEventTypeIds = Array.from(new Set(coachManagedCalendarRows.map((row) => row.event_type_id)));
+  const coachEventTypeActivityResult = await loadCoachEventTypeActivity(coachIds, coachEventTypeIds);
+  if (coachEventTypeActivityResult.error) {
+    console.error('[players/realData:loadRealTeamPlayerDatasets] Error loading coach event type activity settings:', coachEventTypeActivityResult.error, {
+      teamId,
+      coachCount: coachIds.length,
+    });
+  }
+
   let injuryQueryError: string | null = null;
   if (injuriesResult.error) {
     console.error('[players/realData:loadRealTeamPlayerDatasets] Error loading injuries for team players:', injuriesResult.error, { teamId, playerCount: playerIds.length });
@@ -872,6 +1120,10 @@ export async function loadRealTeamPlayerDatasets(teamId: string): Promise<{ data
   const wellnessRows = (wellnessResult.data ?? []) as WellnessRow[];
   const trainingRows = (trainingResult.data ?? []) as TrainingRow[];
   const injuryRows = ((injuriesResult.data ?? []) as InjuryRow[]);
+  if (attendanceResult.error) {
+    console.warn('[players/realData:loadRealTeamPlayerDatasets] Attendance history is unavailable for the sheet view:', attendanceResult.error, { teamId });
+  }
+  const attendanceRows = attendanceResult.error ? [] : ((attendanceResult.data ?? []) as AttendanceRow[]);
 
   const injuryRowsByUserId = injuryRows.reduce<Record<string, InjuryRow[]>>((accumulator, row) => {
     if (!accumulator[row.user_id]) {
@@ -903,9 +1155,12 @@ export async function loadRealTeamPlayerDatasets(teamId: string): Promise<{ data
       wellnessRows: wellnessRows.filter((wellnessRow) => wellnessRow.user_id === row.user_id),
       trainingRows: trainingRows.filter((trainingRow) => trainingRow.user_id === row.user_id),
       calendarRows: calendarRows.filter((calendarRow) => calendarRow.user_id === row.user_id),
+      teamCalendarRows: calendarRows,
       activityByPlayerAndType: eventTypeActivityResult.activityByPlayerAndType,
+      activityByCoachAndType: coachEventTypeActivityResult.activityByCoachAndType,
       injuryRows: injuryRowsByUserId[row.user_id],
       injuryQueryError,
+      attendanceRows: attendanceRows.filter((attendanceRow) => attendanceRow.player_id === row.user_id),
     });
   });
 

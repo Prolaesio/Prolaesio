@@ -46,6 +46,7 @@ export interface TeamMultiFactorReadinessPoint {
   energyScore: number;
   fatigueScore: number;
   stressScore: number;
+  acuteTrainingLoad: number;
   loadScore: number;
 }
 

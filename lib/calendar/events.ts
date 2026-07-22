@@ -41,12 +41,16 @@ export interface CalendarOccurrence {
 }
 
 const builtInActivityEventTypeIds = new Set([
+  'training',
   'team-training',
+  'game',
   'match',
   'personal-training',
   'cardio',
   'hiit',
   'gym',
+  'recovery',
+  'solo',
 ]);
 
 function asObject(value: unknown): Record<string, unknown> | null {

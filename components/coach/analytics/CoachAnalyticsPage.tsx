@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { AnalyticsHistorySelect } from '@/components/coach/analytics/AnalyticsHistorySelect';
 import { AnalyticsLegend } from '@/components/coach/analytics/AnalyticsLegend';
 import { AnalyticsViewToggle } from '@/components/coach/analytics/AnalyticsViewToggle';
+import { filterAnalyticsPoints, getHistoryMinDateTime, type AnalyticsHistoryRange } from '@/components/coach/analytics/historyRange';
 import { comparisonMetricDefinitions } from '@/components/coach/analytics/types';
 import { IndividualPlayerAnalyticsCard } from '@/components/coach/analytics/IndividualPlayerAnalyticsCard';
 import { MetricsGrid } from '@/components/coach/analytics/MetricsGrid';
@@ -13,6 +15,50 @@ import type { AnalyticsViewMode, ComparisonMetricKey, TeamAnalyticsDataset, Team
 import { useCoachTeam } from '@/lib/coach/selectedTeam';
 import { useCoachSelectedTeamInsights } from '@/lib/coach/teamInsights';
 import { usePersistedState } from '@/lib/usePersistedState';
+
+function getFilteredTeamAnalytics(teamAnalytics: TeamAnalyticsDataset, historyRange: AnalyticsHistoryRange): TeamAnalyticsDataset {
+  const minDateTime = getHistoryMinDateTime([
+    teamAnalytics.averages.readinessTrend,
+    teamAnalytics.averages.energyFatigueLoad,
+    teamAnalytics.averages.sleepQualityAndTiming,
+    teamAnalytics.averages.stressVsSleepScore,
+    teamAnalytics.averages.multiFactorReadiness,
+  ], historyRange);
+  if (minDateTime == null) return teamAnalytics;
+
+  const averages: TeamAnalyticsDataset['averages'] = {
+    readinessTrend: filterAnalyticsPoints(teamAnalytics.averages.readinessTrend, minDateTime),
+    energyFatigueLoad: filterAnalyticsPoints(teamAnalytics.averages.energyFatigueLoad, minDateTime),
+    sleepQualityAndTiming: filterAnalyticsPoints(teamAnalytics.averages.sleepQualityAndTiming, minDateTime),
+    stressVsSleepScore: filterAnalyticsPoints(teamAnalytics.averages.stressVsSleepScore, minDateTime),
+    multiFactorReadiness: filterAnalyticsPoints(teamAnalytics.averages.multiFactorReadiness, minDateTime),
+  };
+  const labels = [
+    ...averages.readinessTrend,
+    ...averages.energyFatigueLoad,
+    ...averages.sleepQualityAndTiming,
+    ...averages.stressVsSleepScore,
+    ...averages.multiFactorReadiness,
+  ]
+    .map((point) => ({ date: point.date, label: point.label }))
+    .filter((point, index, points) => points.findIndex((candidate) => candidate.date === point.date) === index)
+    .sort((first, second) => first.date.localeCompare(second.date))
+    .map((point) => point.label);
+  const visibleLabels = new Set(labels);
+  const individualsByLabel = labels.reduce<TeamAnalyticsDataset['individualsByLabel']>((accumulator, label) => {
+    accumulator[label] = teamAnalytics.individualsByLabel[label] ?? [];
+    return accumulator;
+  }, {});
+
+  return {
+    ...teamAnalytics,
+    labels,
+    averages,
+    individualsByLabel: Object.fromEntries(
+      Object.entries(individualsByLabel).filter(([label]) => visibleLabels.has(label))
+    ),
+  };
+}
 
 function AveragesView({
   legendItems,
@@ -89,9 +135,17 @@ function AveragesView({
             title="Team Multi-Factor Inputs vs Readiness Score"
             data={averages.multiFactorReadiness}
             leftDomain={[0, 100]}
+            rightDomain={[0, 950]}
             interactiveLegend
             series={[
-              { dataKey: 'readinessScore', name: 'Readiness Score', color: 'var(--metric-readiness)', type: 'bar' },
+              {
+                dataKey: 'acuteTrainingLoad',
+                name: 'Acute Training Load',
+                color: 'var(--metric-load)',
+                type: 'bar',
+                yAxisId: 'right',
+              },
+              { dataKey: 'readinessScore', name: 'Readiness Score', color: 'var(--metric-readiness)' },
               { dataKey: 'sleepScore', name: 'Sleep Score', color: 'var(--metric-sleep-score)' },
               { dataKey: 'energyScore', name: 'Energy', color: 'var(--metric-energy)' },
               { dataKey: 'fatigueScore', name: 'Fatigue', color: 'var(--metric-fatigue)' },
@@ -228,25 +282,30 @@ function IndividualsView({
 export function CoachAnalyticsPage() {
   const { selectedTeam } = useCoachTeam();
   const [viewMode, setViewMode] = usePersistedState<AnalyticsViewMode>('lodario:coach-analytics:view', 'averages');
+  const [historyRange, setHistoryRange] = usePersistedState<AnalyticsHistoryRange>('lodario:coach-analytics:history-range', 'unlimited');
   const { analyticsData: teamAnalytics, isLoading, error } = useCoachSelectedTeamInsights(selectedTeam.id);
-  const hasAnalyticsData = teamAnalytics.labels.length > 0;
+  const filteredTeamAnalytics = useMemo(
+    () => getFilteredTeamAnalytics(teamAnalytics, historyRange),
+    [historyRange, teamAnalytics]
+  );
+  const hasAnalyticsData = filteredTeamAnalytics.labels.length > 0;
   const [selectedDayLabel, setSelectedDayLabel] = usePersistedState<string>('lodario:coach-analytics:selected-day', '');
 
   useEffect(() => {
-    const latestLabel = teamAnalytics.labels[teamAnalytics.labels.length - 1] ?? '';
-    if (!selectedDayLabel || !teamAnalytics.labels.includes(selectedDayLabel)) {
+    const latestLabel = filteredTeamAnalytics.labels[filteredTeamAnalytics.labels.length - 1] ?? '';
+    if (!selectedDayLabel || !filteredTeamAnalytics.labels.includes(selectedDayLabel)) {
       setSelectedDayLabel(latestLabel);
     }
-  }, [selectedDayLabel, setSelectedDayLabel, teamAnalytics.labels]);
+  }, [filteredTeamAnalytics.labels, selectedDayLabel, setSelectedDayLabel]);
 
   const playersForSelectedDay = useMemo(() => {
     if (!selectedDayLabel) return [];
-    return teamAnalytics.individualsByLabel[selectedDayLabel] ?? [];
-  }, [selectedDayLabel, teamAnalytics.individualsByLabel]);
+    return filteredTeamAnalytics.individualsByLabel[selectedDayLabel] ?? [];
+  }, [filteredTeamAnalytics.individualsByLabel, selectedDayLabel]);
   const teamAverageLoadForSelectedDay = useMemo(() => {
     if (!selectedDayLabel) return 0;
-    return teamAnalytics.averages.energyFatigueLoad.find((point) => point.label === selectedDayLabel)?.acuteTrainingLoad ?? 0;
-  }, [selectedDayLabel, teamAnalytics.averages.energyFatigueLoad]);
+    return filteredTeamAnalytics.averages.energyFatigueLoad.find((point) => point.label === selectedDayLabel)?.acuteTrainingLoad ?? 0;
+  }, [filteredTeamAnalytics.averages.energyFatigueLoad, selectedDayLabel]);
 
   if (!selectedTeam.id) {
     return (
@@ -272,9 +331,12 @@ export function CoachAnalyticsPage() {
           {error ? <p className="mt-2 text-xs text-[var(--status-red)]">Unable to load analytics data: {error}</p> : null}
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-gray-300">View:</span>
-          <AnalyticsViewToggle value={viewMode} onChange={setViewMode} />
+        <div className="flex flex-wrap items-center gap-3">
+          <AnalyticsHistorySelect value={historyRange} onChange={setHistoryRange} />
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-300">View:</span>
+            <AnalyticsViewToggle value={viewMode} onChange={setViewMode} />
+          </div>
         </div>
       </header>
 
@@ -283,9 +345,9 @@ export function CoachAnalyticsPage() {
           <section className="glass-card p-6 text-sm text-gray-300">Loading analytics data...</section>
         ) : hasAnalyticsData ? (
           <AveragesView
-            legendItems={teamAnalytics.legendItems}
-            teamAveragesMetrics={teamAnalytics.teamAveragesMetrics}
-            averages={teamAnalytics.averages}
+            legendItems={filteredTeamAnalytics.legendItems}
+            teamAveragesMetrics={filteredTeamAnalytics.teamAveragesMetrics}
+            averages={filteredTeamAnalytics.averages}
           />
         ) : (
           <section className="glass-card p-6 text-sm text-gray-300">
@@ -299,7 +361,7 @@ export function CoachAnalyticsPage() {
         <section className="glass-card p-6 text-sm text-gray-300">Loading individual player analytics...</section>
       ) : hasAnalyticsData ? (
         <IndividualsView
-          labels={teamAnalytics.labels}
+          labels={filteredTeamAnalytics.labels}
           selectedDayLabel={selectedDayLabel}
           onSelectDayLabel={setSelectedDayLabel}
           playersForDay={playersForSelectedDay}

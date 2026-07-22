@@ -189,7 +189,7 @@ function getRecurrenceLabel(event: PlayerCalendarEvent): string {
   return `Monthly (${(event.recurrenceConfig?.monthDays ?? []).join(', ') || 'Custom'})`;
 }
 
-function EventDetailsModal({
+export function PlayerEventDetailsModal({
   occurrence,
   onClose,
   onEdit,
@@ -199,10 +199,10 @@ function EventDetailsModal({
   onEdit?: (occurrence: SelectedOccurrence) => void;
 }) {
   const event = occurrence.event;
-  const canEdit = event.coachManaged === true;
+  const canEdit = event.coachManaged === true && Boolean(onEdit);
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4 backdrop-blur-[3px]">
       <div className="w-full max-w-md rounded-2xl border border-[rgba(255,255,255,0.1)] bg-[var(--background)] shadow-2xl">
         <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.08)] px-4 py-3">
           <h3 className="text-sm font-semibold text-white">Event Details</h3>
@@ -677,7 +677,7 @@ export function PlayerCalendar({ events, eventTypeColors = {}, className, onEdit
       </div>
 
       {selectedOccurrence ? (
-        <EventDetailsModal
+        <PlayerEventDetailsModal
           occurrence={selectedOccurrence}
           onClose={() => setSelectedOccurrenceRef(null)}
           onEdit={(occurrence) => {

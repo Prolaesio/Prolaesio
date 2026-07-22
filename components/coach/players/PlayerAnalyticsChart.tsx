@@ -10,7 +10,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 interface AnalyticsSeries {
   dataKey: string;
@@ -31,6 +32,47 @@ interface PlayerAnalyticsChartProps {
   interactiveLegend?: boolean;
 }
 
+interface TooltipPortalPayloadItem {
+  name?: string | number;
+  value?: string | number | ReadonlyArray<string | number>;
+  color?: string;
+}
+
+interface TooltipPortalProps {
+  active?: boolean;
+  coordinate?: { x?: number; y?: number };
+  label?: string | number;
+  payload?: ReadonlyArray<TooltipPortalPayloadItem>;
+  chartContainer: HTMLDivElement | null;
+}
+
+function ChartTooltipPortal({ active, coordinate, label, payload, chartContainer }: TooltipPortalProps) {
+  if (!active || !coordinate || !payload?.length || !chartContainer || typeof document === 'undefined') {
+    return null;
+  }
+
+  const chartBounds = chartContainer.getBoundingClientRect();
+  const left = chartBounds.left + (coordinate.x ?? 0) + 12;
+  const top = chartBounds.top + (coordinate.y ?? 0) + 12;
+
+  return createPortal(
+    <div
+      className="pointer-events-none fixed max-w-[240px] rounded-[10px] border border-[rgba(255,255,255,0.14)] bg-[rgba(var(--surface-shell-rgb),0.98)] p-3 text-xs shadow-[0_18px_36px_rgba(0,0,0,0.42)]"
+      style={{ left, top, zIndex: 2147483647 }}
+    >
+      <p className="mb-2 text-sm font-semibold text-white">{label}</p>
+      <div className="space-y-2">
+        {payload.map((item) => (
+          <p key={`${item.name}-${item.value}`} className="font-semibold" style={{ color: item.color }}>
+            {item.name} : {item.value}
+          </p>
+        ))}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 export function PlayerAnalyticsChart({
   graphNumber,
   title,
@@ -42,6 +84,7 @@ export function PlayerAnalyticsChart({
   interactiveLegend = false,
 }: PlayerAnalyticsChartProps) {
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
+  const chartContainerRef = useRef<HTMLDivElement>(null);
   const hasBars = series.some((item) => item.type === 'bar');
   const hasRightAxis = series.some((item) => item.yAxisId === 'right');
   const isSeriesHidden = (dataKey: string) => interactiveLegend && hiddenSeries.has(dataKey);
@@ -95,7 +138,7 @@ export function PlayerAnalyticsChart({
         </span>
       </div>
 
-      <div className="h-[200px] w-full">
+      <div ref={chartContainerRef} className="h-[200px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           {hasBars ? (
             <ComposedChart data={data} margin={{ top: 4, right: hasRightAxis ? 8 : 0, left: -20, bottom: 2 }}>
@@ -121,11 +164,15 @@ export function PlayerAnalyticsChart({
                 />
               ) : null}
               <Tooltip
-                contentStyle={{
-                  backgroundColor: 'rgba(var(--surface-shell-rgb),0.96)',
-                  border: '1px solid rgba(255,255,255,0.14)',
-                  borderRadius: '10px',
-                }}
+                content={(props) => (
+                  <ChartTooltipPortal
+                    active={props.active}
+                    coordinate={props.coordinate}
+                    label={props.label}
+                    payload={props.payload}
+                    chartContainer={chartContainerRef.current}
+                  />
+                )}
               />
               <Legend wrapperStyle={{ fontSize: '10px' }} iconType="circle" content={legendContent} />
               {series.map((item) =>
@@ -180,11 +227,15 @@ export function PlayerAnalyticsChart({
                 />
               ) : null}
               <Tooltip
-                contentStyle={{
-                  backgroundColor: 'rgba(var(--surface-shell-rgb),0.96)',
-                  border: '1px solid rgba(255,255,255,0.14)',
-                  borderRadius: '10px',
-                }}
+                content={(props) => (
+                  <ChartTooltipPortal
+                    active={props.active}
+                    coordinate={props.coordinate}
+                    label={props.label}
+                    payload={props.payload}
+                    chartContainer={chartContainerRef.current}
+                  />
+                )}
               />
               <Legend wrapperStyle={{ fontSize: '10px' }} iconType="circle" content={legendContent} />
               {series.map((item) => (

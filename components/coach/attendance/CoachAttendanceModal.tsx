@@ -180,7 +180,7 @@ export function CoachAttendanceModal({ target, onClose }: CoachAttendanceModalPr
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/60 p-4 backdrop-blur-sm sm:items-center">
+    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/75 p-4 backdrop-blur-[3px] sm:items-center">
       <div className="flex max-h-[88vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-[rgba(255,255,255,0.12)] bg-[var(--background)] shadow-2xl">
         <div className="flex items-center justify-between gap-3 border-b border-[rgba(255,255,255,0.1)] bg-[var(--card-bg)] px-4 py-3">
           <div className="min-w-0">
