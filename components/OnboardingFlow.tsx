@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { differenceInYears, parseISO, format, addWeeks, subWeeks } from 'date-fns';
+import React, { useState } from 'react';
+import { format, addWeeks, subWeeks } from 'date-fns';
 import {
   ArrowRight,
   ArrowLeft,
@@ -74,7 +74,6 @@ export function OnboardingFlow() {
 
   // --- Step 1: Mandatory profile setup ---
   const [displayName, setDisplayName] = useState<string>(profile?.displayName || '');
-  const [dateOfBirth, setDateOfBirth] = useState<string>(profile?.dateOfBirth || '');
   const [heightCm, setHeightCm] = useState<string>(
     profile?.heightCm != null ? String(profile.heightCm) : ''
   );
@@ -111,15 +110,6 @@ export function OnboardingFlow() {
 
   const [completing, setCompleting] = useState(false);
 
-  const computedAge = useMemo(() => {
-    if (!dateOfBirth) return null;
-    try {
-      return differenceInYears(new Date(), parseISO(dateOfBirth));
-    } catch {
-      return null;
-    }
-  }, [dateOfBirth]);
-
   // ---- Helpers ----
   const togglePosition = (pos: Position) => {
     setPositions(prev =>
@@ -128,8 +118,7 @@ export function OnboardingFlow() {
   };
 
   const buildProfilePatch = (overrides: Partial<UserProfile> = {}): UserProfile => ({
-    age: computedAge ?? profile?.age ?? 18,
-    dateOfBirth: dateOfBirth || profile?.dateOfBirth,
+    age: profile?.age ?? 18,
     displayName: normalizePlayerDisplayName(displayName) ?? profile?.displayName,
     positions,
     priorities: profile?.priorities || [],
@@ -147,17 +136,9 @@ export function OnboardingFlow() {
     e.preventDefault();
     setStep1Error('');
 
-    if (!dateOfBirth) {
-      setStep1Error('Please enter your birthday.');
-      return;
-    }
     const displayNameError = getPlayerDisplayNameValidationError(displayName, { required: true });
     if (displayNameError) {
       setStep1Error(displayNameError);
-      return;
-    }
-    if (computedAge === null || computedAge < 1 || computedAge > 99) {
-      setStep1Error('Please enter a valid date of birth.');
       return;
     }
     const heightNum = Number(heightCm);
@@ -344,27 +325,6 @@ export function OnboardingFlow() {
                   <p className="mt-1.5 text-[11px] leading-relaxed text-gray-500">
                     This is the name your coach will see. We recommend using your real name.
                   </p>
-                </div>
-
-                {/* Birthday */}
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1.5">
-                    Birthday
-                  </label>
-                  <div className="flex items-center space-x-3">
-                    <input
-                      type="date"
-                      value={dateOfBirth}
-                      onChange={(e) => { setDateOfBirth(e.target.value); setStep1Error(''); }}
-                      max={new Date().toISOString().split('T')[0]}
-                      className="flex-1 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-xl p-3 text-white touch-target [color-scheme:dark]"
-                    />
-                    {computedAge !== null && (
-                      <div className="flex-shrink-0 bg-gradient-to-r from-[var(--accent-primary)] to-[var(--accent-tertiary)] text-black font-bold px-4 py-2.5 rounded-xl text-sm shadow-md">
-                        Age: {computedAge}
-                      </div>
-                    )}
-                  </div>
                 </div>
 
                 {/* Height & Weight */}

@@ -16,6 +16,7 @@ import {
   ArrowRight,
   User,
   ClipboardList,
+  UsersRound,
 } from 'lucide-react';
 import { AppRole, getDefaultRouteForRole } from '@/lib/routeRoles';
 
@@ -49,7 +50,7 @@ export function AuthGate({ children, requiredRole }: AuthGateProps) {
 
   if (requiredRole && userRole !== requiredRole) {
     const fallbackRoute = getDefaultRouteForRole(userRole);
-    const roleLabel = requiredRole === 'coach' ? 'coach' : 'player';
+    const roleLabel = requiredRole === 'coach' ? 'coach' : requiredRole === 'guardian' ? 'Guardian' : 'player';
 
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--background)] px-4">
@@ -108,7 +109,7 @@ function RoleSelectionScreen() {
         <div className="glass-card p-6 sm:p-8 animate-slide-up">
           <h2 className="text-2xl font-bold text-white">Choose your role</h2>
           <p className="text-sm text-gray-400 mt-2 mb-6 leading-relaxed">
-            Select how you use Lodario. Players get personal training guidance. Coaches get team dashboards and planning tools.
+            Select how you use Lodario. Players get personal training guidance. Coaches get team dashboards and planning tools. Guardian accounts are created through the separate verified linking process.
           </p>
 
           <div className="space-y-3">
@@ -125,6 +126,15 @@ function RoleSelectionScreen() {
               </div>
               {savingRole === 'player' ? <Loader2 className="ml-auto animate-spin text-[var(--accent-primary)]" size={18} /> : null}
             </button>
+
+            <div className="w-full p-4 rounded-xl border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] text-left flex items-center space-x-3 opacity-70">
+              <UsersRound className="text-gray-400 flex-shrink-0" size={22} />
+              <div>
+                <p className="text-sm font-bold text-white">Guardian</p>
+                <p className="text-xs text-gray-400">Available after a verified player relationship is created.</p>
+              </div>
+              <span className="ml-auto text-[10px] uppercase tracking-wide text-gray-500">Invite only</span>
+            </div>
 
             <button
               type="button"

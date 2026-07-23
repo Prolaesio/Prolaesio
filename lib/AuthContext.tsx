@@ -9,10 +9,13 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   userRole: AppRole | null;
+  availableRoles: AppRole[];
   isLoading: boolean;
   signUp: (email: string, password: string, role?: AppRole) => Promise<{ error: string | null }>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   setUserRole: (role: AppRole) => Promise<{ error: string | null }>;
+  switchRole: (role: AppRole) => Promise<{ error: string | null }>;
+  refreshUserRoles: () => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   updatePassword: (password: string) => Promise<{ error: string | null }>;
@@ -24,10 +27,13 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
   userRole: null,
+  availableRoles: [],
   isLoading: true,
   signUp: async () => ({ error: null }),
   signIn: async () => ({ error: null }),
   setUserRole: async () => ({ error: null }),
+  switchRole: async () => ({ error: null }),
+  refreshUserRoles: async () => {},
   signOut: async () => {},
   resetPassword: async () => ({ error: null }),
   updatePassword: async () => ({ error: null }),
@@ -41,9 +47,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [userRole, setUserRoleState] = useState<AppRole | null>(null);
+  const [availableRoles, setAvailableRoles] = useState<AppRole[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const resolveUserRole = async (activeUser: User): Promise<AppRole | null> => {
+  const resolveUserRole = async (activeUser: User): Promise<{ active: AppRole | null; roles: AppRole[] }> => {
     const metadataRole = isAppRole(activeUser.user_metadata?.role) ? activeUser.user_metadata.role : null;
     const needsRoleSelection = activeUser.user_metadata?.needs_role_selection === true;
 
@@ -55,25 +62,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     if (error) {
       console.error('Error resolving user role from profile:', error);
-      return metadataRole ?? 'player';
+      return { active: metadataRole ?? 'player', roles: [metadataRole ?? 'player'] };
     }
 
     if (!profile) {
-      if (metadataRole) return metadataRole;
-      return needsRoleSelection ? null : 'player';
+      if (metadataRole) return { active: metadataRole, roles: [metadataRole] };
+      return { active: needsRoleSelection ? null : 'player', roles: needsRoleSelection ? [] : ['player'] };
     }
 
-    if (isAppRole(profile.role)) {
-      return profile.role;
-    }
-
-    if (metadataRole) {
-      return metadataRole;
-    }
-
-    // Existing users with profile rows but no explicit role should keep
-    // current athlete-side access.
-    return 'player';
+    const profileRole: AppRole = isAppRole(profile.role) ? profile.role : metadataRole ?? 'player';
+    const { data: roleRows } = await supabase.from('user_account_roles').select('role').eq('user_id', activeUser.id).eq('status', 'active');
+    const roles = Array.from(new Set([profileRole, ...(roleRows ?? []).map(row => row.role).filter(isAppRole)]));
+    const saved = typeof window !== 'undefined' ? window.localStorage.getItem(`lodario-active-role:${activeUser.id}`) : null;
+    return { active: isAppRole(saved) && roles.includes(saved) ? saved : profileRole, roles };
   };
 
   useEffect(() => {
@@ -87,13 +88,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (!nextSession?.user) {
         setUserRoleState(null);
+        setAvailableRoles([]);
         setIsLoading(false);
         return;
       }
 
       const resolvedRole = await resolveUserRole(nextSession.user);
       if (!isMounted) return;
-      setUserRoleState(resolvedRole);
+      setUserRoleState(resolvedRole.active);
+      setAvailableRoles(resolvedRole.roles);
       setIsLoading(false);
     };
 
@@ -173,6 +176,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
 
     setUserRoleState(role);
+    setAvailableRoles(current => Array.from(new Set([...current, role])));
+    return { error: null };
+  };
+
+  const refreshUserRoles = async () => {
+    if (!user) return;
+    const resolved = await resolveUserRole(user);
+    setAvailableRoles(resolved.roles);
+    setUserRoleState(current => current && resolved.roles.includes(current) ? current : resolved.active);
+  };
+
+  const switchRole = async (role: AppRole): Promise<{ error: string | null }> => {
+    if (!user) return { error: 'Sign in to change workspace.' };
+    let roles = availableRoles;
+    if (!roles.includes(role)) {
+      const resolved = await resolveUserRole(user);
+      roles = resolved.roles;
+      setAvailableRoles(roles);
+    }
+    if (!roles.includes(role)) return { error: 'That workspace is not available for this account.' };
+    window.localStorage.setItem(`lodario-active-role:${user.id}`, role);
+    setUserRoleState(role);
     return { error: null };
   };
 
@@ -181,6 +206,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUser(null);
     setSession(null);
     setUserRoleState(null);
+    setAvailableRoles([]);
   };
 
   const resetPassword = async (email: string): Promise<{ error: string | null }> => {
@@ -233,10 +259,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         user,
         session,
         userRole,
+        availableRoles,
         isLoading,
         signUp,
         signIn,
         setUserRole,
+        switchRole,
+        refreshUserRoles,
         signOut,
         resetPassword,
         updatePassword,

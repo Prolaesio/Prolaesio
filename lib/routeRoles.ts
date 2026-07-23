@@ -1,15 +1,22 @@
-export type AppRole = "player" | "coach";
+import { isRouteWithinPrefix, resolveDefaultRoleRoute } from './roleRouting.mjs';
+
+export type AppRole = "player" | "coach" | "guardian";
 
 export const COACH_ROUTE_PREFIX = "/coach";
+export const GUARDIAN_ROUTE_PREFIX = "/guardian";
 
 export function isAppRole(value: unknown): value is AppRole {
-  return value === "player" || value === "coach";
+  return value === "player" || value === "coach" || value === "guardian";
 }
 
 export function isCoachRoute(pathname: string): boolean {
-  return pathname === COACH_ROUTE_PREFIX || pathname.startsWith(`${COACH_ROUTE_PREFIX}/`);
+  return isRouteWithinPrefix(pathname, COACH_ROUTE_PREFIX);
+}
+
+export function isGuardianRoute(pathname: string): boolean {
+  return isRouteWithinPrefix(pathname, GUARDIAN_ROUTE_PREFIX);
 }
 
 export function getDefaultRouteForRole(role: AppRole): string {
-  return role === "coach" ? "/coach/dashboard" : "/";
+  return resolveDefaultRoleRoute(role);
 }

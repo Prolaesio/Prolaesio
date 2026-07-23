@@ -7,12 +7,14 @@ import { Loader2, Save } from 'lucide-react';
 import { differenceInYears, parseISO } from 'date-fns';
 import { joinTeamByCode } from '@/lib/teamMembership';
 import { getPlayerDisplayNameValidationError, normalizePlayerDisplayName } from '@/lib/player-names';
+import { getPlayerAgeState } from '@/lib/guardian/onboarding';
 
 export function ProfileForm() {
   const { profile, saveProfile } = useData();
 
   const [displayName, setDisplayName] = useState<string>('');
   const [dateOfBirth, setDateOfBirth] = useState<string>('');
+  const [dateOfBirthVerified, setDateOfBirthVerified] = useState(false);
   const [heightCm, setHeightCm] = useState<string>('');
   const [weightKg, setWeightKg] = useState<string>('');
   const [teamCode, setTeamCode] = useState<string>('');
@@ -32,7 +34,7 @@ export function ProfileForm() {
   useEffect(() => {
     if (profile) {
       setDisplayName(profile.displayName || '');
-      setDateOfBirth(profile.dateOfBirth || '');
+      if (profile.dateOfBirth) setDateOfBirth(profile.dateOfBirth);
       setHeightCm(profile.heightCm != null ? String(profile.heightCm) : '');
       setWeightKg(profile.weightKg != null ? String(profile.weightKg) : '');
       setTeamCode(profile.teamCode || '');
@@ -40,6 +42,18 @@ export function ProfileForm() {
       setPriorities(profile.priorities);
     }
   }, [profile]);
+
+  useEffect(() => {
+    let active = true;
+    void getPlayerAgeState().then(({ data: ageState }) => {
+      if (!active || !ageState?.dateOfBirth) return;
+      setDateOfBirth(ageState.dateOfBirth);
+      setDateOfBirthVerified(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const computedAge = dateOfBirth
     ? differenceInYears(new Date(), parseISO(dateOfBirth))
@@ -217,6 +231,7 @@ export function ProfileForm() {
             value={dateOfBirth}
             onChange={(e) => { setDateOfBirth(e.target.value); setError(''); }}
             max={new Date().toISOString().split('T')[0]}
+            disabled={dateOfBirthVerified}
             className="flex-1 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg p-3 text-white touch-target [color-scheme:dark]"
           />
           {computedAge !== null && (
@@ -228,6 +243,11 @@ export function ProfileForm() {
         {formattedDOB && (
           <p className="text-xs text-gray-500 mt-1.5">{formattedDOB}</p>
         )}
+        {dateOfBirthVerified ? (
+          <p className="mt-1.5 text-[11px] leading-relaxed text-gray-500">
+            This is the verified birthday used for age-policy decisions. Request a correction from Guardians, permissions &amp; privacy if it is wrong.
+          </p>
+        ) : null}
       </div>
 
       {/* Height & Weight */}

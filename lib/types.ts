@@ -26,7 +26,7 @@ export type WeeklyAvailability = Record<number, number[]>;
 export interface UserProfile {
   age: number; // 1-99 (computed from dateOfBirth)
   dateOfBirth?: string; // YYYY-MM-DD
-  role?: 'player' | 'coach';
+  role?: 'player' | 'coach' | 'guardian';
   displayName?: string;
   positions: Position[];
   priorities: Priority[];

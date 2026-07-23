@@ -84,7 +84,6 @@ export class StorageService {
       .upsert({
         id: user.id,
         age: profile.age,
-        date_of_birth: profile.dateOfBirth ?? null,
         display_name: normalizePlayerDisplayName(profile.displayName) ?? null,
         positions: profile.positions,
         priorities: profile.priorities,

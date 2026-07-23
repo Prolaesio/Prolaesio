@@ -7,7 +7,7 @@ import { DataProvider } from '@/lib/DataContext';
 import { BottomNav } from '@/components/BottomNav';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { OnboardingGate } from '@/components/OnboardingGate';
-import { isCoachRoute } from '@/lib/routeRoles';
+import { isCoachRoute, isGuardianRoute } from '@/lib/routeRoles';
 
 interface RootAppShellProps {
   children: React.ReactNode;
@@ -15,8 +15,9 @@ interface RootAppShellProps {
 
 export function RootAppShell({ children }: RootAppShellProps) {
   const pathname = usePathname();
-  const publicRoute = pathname === '/beta';
+  const publicRoute = pathname === '/beta' || pathname.startsWith('/guardian/invite/');
   const coachRoute = isCoachRoute(pathname);
+  const guardianRoute = isGuardianRoute(pathname);
 
   if (publicRoute) {
     return (
@@ -29,6 +30,16 @@ export function RootAppShell({ children }: RootAppShellProps) {
   if (coachRoute) {
     return (
       <AuthGate requiredRole="coach">
+        <div className="min-h-screen bg-[var(--background)]">
+          {children}
+        </div>
+      </AuthGate>
+    );
+  }
+
+  if (guardianRoute) {
+    return (
+      <AuthGate requiredRole="guardian">
         <div className="min-h-screen bg-[var(--background)]">
           {children}
         </div>

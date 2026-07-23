@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import { StorageService } from './storage';
 import { useAuth } from './AuthContext';
 import { UserProfile, WellnessLog, TrainingLog, CalendarEvent, CalendarEventColorOverride, CustomEventType, InjuryRecord } from './types';
+import { supabase } from './supabase';
 
 interface DataContextType {
   profile: UserProfile | null;
@@ -84,6 +85,13 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
     const loadData = async () => {
       setData(prev => ({ ...prev, isLoading: true }));
+
+      const { data: restricted } = await supabase.rpc('player_is_guardian_restricted', { p_player_id: user.id });
+      if (restricted === true) {
+        const profile = await StorageService.getProfile();
+        setData({ profile, wellnessLogs: {}, trainingLogs: [], calendarEvents: [], calendarEventColorOverrides: [], customEventTypes: [], injuries: [], isLoading: false });
+        return;
+      }
 
       const [profile, wellnessLogs, trainingLogs, calendarEvents, calendarEventColorOverrides, customEventTypes, injuries] = await Promise.all([
         StorageService.getProfile(),

@@ -9,6 +9,7 @@ import { FeedbackButton } from '@/components/FeedbackModal';
 import { useData } from '@/lib/DataContext';
 import { useAuth } from '@/lib/AuthContext';
 import { LogOut, Mail, Save, ChevronDown } from 'lucide-react';
+import Link from 'next/link';
 import { TrainingResource, WeeklyAvailability } from '@/lib/types';
 
 export default function ProfilePage() {
@@ -153,6 +154,10 @@ export default function ProfilePage() {
               </div>
             </div>
           )}
+
+          <Link href="/profile/guardians" className="mb-3 flex min-h-12 w-full items-center justify-center rounded-xl border border-[rgba(var(--accent-primary-rgb),0.35)] bg-[rgba(var(--accent-primary-rgb),0.08)] text-sm font-bold text-[var(--accent-primary)]">
+            Guardians, permissions & privacy
+          </Link>
 
           <FeedbackButton
             contextLabel="Player Profile"
